@@ -1248,41 +1248,112 @@ read_only::get_table_by_scope_result read_only::get_table_by_scope( const read_o
    return result;
 }
 
-vector<asset> read_only::get_currency_balance( const read_only::get_currency_balance_params& p )const {
+fc::variant read_only::get_currency_balance( const read_only::get_currency_balance_params& p )const {
+   fc::mutable_variant_object results;
+   vector<name> contracts;
+   bool abi_found = false;
 
    const abi_def abi = eosio::chain_apis::get_abi( db, p.code );
-   (void)get_table_type( abi, "accounts" );
-
-   vector<asset> results;
-   walk_key_value_table(p.code, p.account, N(accounts), [&](const key_value_object& obj){
-      EOS_ASSERT( obj.value.size() >= sizeof(asset), chain::asset_type_exception, "Invalid data on table");
-
-      asset cursor;
-      fc::datastream<const char *> ds(obj.value.data(), obj.value.size());
-      fc::raw::unpack(ds, cursor);
-
-      EOS_ASSERT( cursor.get_symbol().valid(), chain::asset_type_exception, "Invalid asset");
-
-      if( !p.symbol || boost::iequals(cursor.symbol_name(), *p.symbol) ) {
-        results.emplace_back(cursor);
+   for (const auto& t : abi.tables) {
+      if (t.name == N(accounts)) {
+         abi_found = true;
+         break;
       }
+   }
 
-      // return false if we are looking for one and found it, true otherwise
-      return !(p.symbol && boost::iequals(cursor.symbol_name(), *p.symbol));
-   });
+   if (abi_found) {
+      contracts.emplace_back(p.code);
+   } else {
+      contracts.emplace_back(N(token.sys));
+      contracts.emplace_back(N(token.std));
+   }
+
+   for (auto& code : contracts) {
+      walk_key_value_table(code, p.account, N(accounts), [&](const key_value_object& obj){
+         EOS_ASSERT( obj.value.size() >= sizeof(asset), chain::asset_type_exception, "Invalid data on table");
+
+         fc::datastream<const char *> ds(obj.value.data(), obj.value.size());
+         read_only::get_currency_balance_result_details result;
+
+         fc::raw::unpack(ds, result.balance);
+         result.deposit = asset(0, result.balance.get_symbol());
+         result.withdrawal_requested = asset(0, result.balance.get_symbol());
+         result.issuer = chain::config::system_account_name;
+
+         if (obj.value.size() > sizeof(asset)) {
+            fc::raw::unpack(ds, result.deposit);
+            fc::raw::unpack(ds, result.issuer);
+
+            walk_key_value_table(code, p.account, "withdraws", [&](const key_value_object& obj2) {
+               EOS_ASSERT( obj2.value.size() >= sizeof(asset) + sizeof(name) + sizeof(fc::time_point_sec), chain::asset_type_exception, "Invalid data on table");
+
+               fc::datastream<const char *> ds2(obj2.value.data(), obj2.value.size());
+               asset quantity;
+               name  issuer;
+               fc::time_point_sec request_time;
+
+               fc::raw::unpack(ds2, quantity);
+               fc::raw::unpack(ds2, issuer);
+               fc::raw::unpack(ds2, request_time);
+
+               if ((quantity.get_symbol() == result.balance.get_symbol()) && (issuer == p.issuer)) {
+                  result.withdrawal_requested = quantity;
+                  result.withdrawal_requested_time = request_time;
+                  return false;
+               }
+               return true;
+            });
+         }
+
+         EOS_ASSERT( result.balance.get_symbol().valid(), chain::asset_type_exception, "Invalid asset");
+
+         if( (result.issuer == p.issuer) && (!p.symbol || boost::iequals(result.balance.symbol_name(), *p.symbol)) ) {
+            if (!p.verbose || !(*p.verbose)) {
+               results[result.balance.symbol_name()] = read_only::get_currency_balance_result {result.balance + result.deposit + result.withdrawal_requested};
+            } else {
+               results[result.balance.symbol_name()] = result;
+            }
+         }
+
+         // return false if we are looking for one and found it, true otherwise
+         return (result.issuer != p.issuer) || !(p.symbol && boost::iequals(result.balance.symbol_name(), *p.symbol));
+      });
+   }
 
    return results;
 }
 
 fc::variant read_only::get_currency_stats( const read_only::get_currency_stats_params& p )const {
    fc::mutable_variant_object results;
+   account_name code;
+   bool abi_found = false;
 
    const abi_def abi = eosio::chain_apis::get_abi( db, p.code );
-   (void)get_table_type( abi, "stat" );
+   for (const auto& t : abi.tables) {
+      if (t.name == N(stat)) {
+         abi_found = true;
+         break;
+      }
+   }
 
-   uint64_t scope = ( eosio::chain::string_to_symbol( 0, boost::algorithm::to_upper_copy(p.symbol).c_str() ) >> 8 );
+   if (abi_found) {
+      code = p.code;
+      //scope = ( eosio::chain::string_to_symbol( 0, boost::algorithm::to_upper_copy(p.symbol).c_str() ) >> 8 );
+   } else {
+      walk_key_value_table(N(gxc.token), p.issuer, N(token), [&](const key_value_object& obj) {
+         EOS_ASSERT( obj.value.size() >= sizeof(name) + sizeof(symbol), chain::asset_type_exception, "Invalid data on table");
 
-   walk_key_value_table(p.code, scope, N(stat), [&](const key_value_object& obj){
+         symbol sym;
+
+         fc::datastream<const char *> ds(obj.value.data(), obj.value.size());
+         fc::raw::unpack(ds, code);
+         fc::raw::unpack(ds, sym);
+
+         return p.symbol != sym.to_string();
+      });
+   }
+
+   walk_key_value_table(code, p.issuer, N(stat), [&](const key_value_object& obj){
       EOS_ASSERT( obj.value.size() >= sizeof(read_only::get_currency_stats_result), chain::asset_type_exception, "Invalid data on table");
 
       fc::datastream<const char *> ds(obj.value.data(), obj.value.size());
@@ -1292,8 +1363,10 @@ fc::variant read_only::get_currency_stats( const read_only::get_currency_stats_p
       fc::raw::unpack(ds, result.max_supply);
       fc::raw::unpack(ds, result.issuer);
 
-      results[result.supply.symbol_name()] = result;
-      return true;
+      if (p.symbol == result.supply.symbol_name()) {
+         results[result.supply.symbol_name()] = result;
+      }
+      return p.symbol != result.supply.symbol_name();
    });
 
    return results;
@@ -1725,7 +1798,7 @@ read_only::get_account_results read_only::get_account( const get_account_params&
    if( abi_serializer::to_abi(code_account.abi, abi) ) {
       abi_serializer abis( abi, abi_serializer_max_time );
 
-      const auto token_code = N(eosio.token);
+      const auto token_code = N(gxc.token);
 
       auto core_symbol = extract_core_symbol();
 
@@ -1869,7 +1942,7 @@ chain::symbol read_only::extract_core_symbol()const {
 
    // The following code makes assumptions about the contract deployed on eosio account (i.e. the system contract) and how it stores its data.
    const auto& d = db.db();
-   const auto* t_id = d.find<chain::table_id_object, chain::by_code_scope_table>(boost::make_tuple( N(eosio), N(eosio), N(rammarket) ));
+   const auto* t_id = d.find<chain::table_id_object, chain::by_code_scope_table>(boost::make_tuple( chain::config::system_account_name, chain::config::system_account_name, N(rammarket) ));
    if( t_id != nullptr ) {
       const auto &idx = d.get_index<key_value_index, by_scope_primary>();
       auto it = idx.find(boost::make_tuple( t_id->id, eosio::chain::string_to_symbol_c(4,"RAMCORE") ));

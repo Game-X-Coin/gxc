@@ -308,16 +308,30 @@ public:
    struct get_currency_balance_params {
       name             code;
       name             account;
+      name             issuer;
       optional<string> symbol;
+      optional<bool>   verbose;
    };
 
-   vector<asset> get_currency_balance( const get_currency_balance_params& params )const;
+   struct get_currency_balance_result {
+      asset balance;
+   };
+
+   struct get_currency_balance_result_details {
+      asset balance;
+      asset deposit;
+      name issuer;
+      asset withdrawal_requested;
+      fc::time_point_sec  withdrawal_requested_time;
+   };
+
+   fc::variant get_currency_balance( const get_currency_balance_params& params )const;
 
    struct get_currency_stats_params {
       name           code;
       string         symbol;
+      name           issuer;
    };
-
 
    struct get_currency_stats_result {
       asset          supply;
@@ -717,8 +731,10 @@ FC_REFLECT( eosio::chain_apis::read_only::get_table_by_scope_params, (code)(tabl
 FC_REFLECT( eosio::chain_apis::read_only::get_table_by_scope_result_row, (code)(scope)(table)(payer)(count));
 FC_REFLECT( eosio::chain_apis::read_only::get_table_by_scope_result, (rows)(more) );
 
-FC_REFLECT( eosio::chain_apis::read_only::get_currency_balance_params, (code)(account)(symbol));
-FC_REFLECT( eosio::chain_apis::read_only::get_currency_stats_params, (code)(symbol));
+FC_REFLECT( eosio::chain_apis::read_only::get_currency_balance_params, (code)(account)(issuer)(symbol)(verbose));
+FC_REFLECT( eosio::chain_apis::read_only::get_currency_balance_result, (balance));
+FC_REFLECT( eosio::chain_apis::read_only::get_currency_balance_result_details, (balance)(deposit)(issuer)(withdrawal_requested)(withdrawal_requested_time));
+FC_REFLECT( eosio::chain_apis::read_only::get_currency_stats_params, (code)(symbol)(issuer));
 FC_REFLECT( eosio::chain_apis::read_only::get_currency_stats_result, (supply)(max_supply)(issuer));
 
 FC_REFLECT( eosio::chain_apis::read_only::get_producers_params, (json)(lower_bound)(limit) )
