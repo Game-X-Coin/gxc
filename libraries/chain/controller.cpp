@@ -197,23 +197,23 @@ struct controller_impl {
     read_mode( cfg.read_mode )
    {
 
-#define SET_APP_HANDLER( receiver, contract, action) \
-   set_apply_handler( #receiver, #contract, #action, &BOOST_PP_CAT(apply_, BOOST_PP_CAT(contract, BOOST_PP_CAT(_,action) ) ) )
+#define SET_APP_HANDLER( receiver, contract, scope, action) \
+   set_apply_handler( #receiver, #contract, #action, &BOOST_PP_CAT(apply_, BOOST_PP_CAT(scope, BOOST_PP_CAT(_,action) ) ) )
 
-   SET_APP_HANDLER( eosio, eosio, newaccount );
-   SET_APP_HANDLER( eosio, eosio, setcode );
-   SET_APP_HANDLER( eosio, eosio, setabi );
-   SET_APP_HANDLER( eosio, eosio, updateauth );
-   SET_APP_HANDLER( eosio, eosio, deleteauth );
-   SET_APP_HANDLER( eosio, eosio, linkauth );
-   SET_APP_HANDLER( eosio, eosio, unlinkauth );
+   SET_APP_HANDLER( gxc, gxc, eosio, newaccount );
+   SET_APP_HANDLER( gxc, gxc, eosio, setcode );
+   SET_APP_HANDLER( gxc, gxc, eosio, setabi );
+   SET_APP_HANDLER( gxc, gxc, eosio, updateauth );
+   SET_APP_HANDLER( gxc, gxc, eosio, deleteauth );
+   SET_APP_HANDLER( gxc, gxc, eosio, linkauth );
+   SET_APP_HANDLER( gxc, gxc, eosio, unlinkauth );
 /*
-   SET_APP_HANDLER( eosio, eosio, postrecovery );
-   SET_APP_HANDLER( eosio, eosio, passrecovery );
-   SET_APP_HANDLER( eosio, eosio, vetorecovery );
+   SET_APP_HANDLER( gxc, gxc, eosio, postrecovery );
+   SET_APP_HANDLER( gxc, gxc, eosio, passrecovery );
+   SET_APP_HANDLER( gxc, gxc, eosio, vetorecovery );
 */
 
-   SET_APP_HANDLER( eosio, eosio, canceldelay );
+   SET_APP_HANDLER( gxc, gxc, eosio, canceldelay );
 
    fork_db.irreversible.connect( [&]( auto b ) {
                                  on_irreversible(b);
