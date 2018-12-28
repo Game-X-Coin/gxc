@@ -37,6 +37,9 @@ struct chain_config {
    uint16_t   max_inline_action_depth;             ///< recursion depth limit on sending inline actions
    uint16_t   max_authority_depth;                 ///< recursion depth limit for checking if an authority is satisfied
 
+   int64_t    net_weight_modifier;
+   int64_t    cpu_weight_modifier;
+
    void validate()const;
 
    template<typename Stream>
@@ -58,7 +61,10 @@ struct chain_config {
                  << "Max Transaction Delay: " << c.max_transaction_delay << ", "
                  << "Max Inline Action Size: " << c.max_inline_action_size << ", "
                  << "Max Inline Action Depth: " << c.max_inline_action_depth << ", "
-                 << "Max Authority Depth: " << c.max_authority_depth << "\n";
+                 << "Max Authority Depth: " << c.max_authority_depth << ", "
+
+                 << "Net Weight Modifier: " << c.net_weight_modifier << ", "
+                 << "CPU Weight Modifier: " << c.cpu_weight_modifier << "\n";
    }
 
    friend inline bool operator ==( const chain_config& lhs, const chain_config& rhs ) {
@@ -78,7 +84,9 @@ struct chain_config {
                            lhs.max_transaction_delay,
                            lhs.max_inline_action_size,
                            lhs.max_inline_action_depth,
-                           lhs.max_authority_depth
+                           lhs.max_authority_depth,
+                           lhs.net_weight_modifier,
+                           lhs.cpu_weight_modifier
                         )
                ==
                std::tie(   rhs.max_block_net_usage,
@@ -97,7 +105,9 @@ struct chain_config {
                            rhs.max_transaction_delay,
                            rhs.max_inline_action_size,
                            rhs.max_inline_action_depth,
-                           rhs.max_authority_depth
+                           rhs.max_authority_depth,
+                           rhs.net_weight_modifier,
+                           rhs.cpu_weight_modifier
                         );
    };
 
@@ -118,4 +128,5 @@ FC_REFLECT(eosio::chain::chain_config,
            (max_transaction_lifetime)(deferred_trx_expiration_window)(max_transaction_delay)
            (max_inline_action_size)(max_inline_action_depth)(max_authority_depth)
 
+           (net_weight_modifier)(cpu_weight_modifier)
 )

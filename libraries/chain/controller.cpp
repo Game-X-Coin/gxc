@@ -190,7 +190,7 @@ struct controller_impl {
     blog( cfg.blocks_dir ),
     fork_db( cfg.state_dir ),
     wasmif( cfg.wasm_runtime ),
-    resource_limits( db ),
+    resource_limits( s, db ),
     authorization( s, db ),
     conf( cfg ),
     chain_id( cfg.genesis.compute_chain_id() ),
