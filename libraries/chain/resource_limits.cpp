@@ -1,3 +1,5 @@
+#include <eosio/chain/controller.hpp>
+#include <eosio/chain/global_property_object.hpp>
 #include <eosio/chain/exceptions.hpp>
 #include <eosio/chain/resource_limits.hpp>
 #include <eosio/chain/resource_limits_private.hpp>
@@ -142,7 +144,8 @@ void resource_limits_manager::add_transaction_usage(const flat_set<account_name>
          auto cpu_used_in_window                 = ((uint128_t)usage.cpu_usage.value_ex * window_size) / (uint128_t)config::rate_limiting_precision;
 
          uint128_t user_weight     = (uint128_t)cpu_weight;
-         uint128_t all_user_weight = state.total_cpu_weight;
+         uint128_t all_user_weight = state.total_cpu_weight \
+            + _control.get_global_properties().configuration.cpu_weight_modifier * _db.get_index<resource_limits_index>().indices().size();
 
          auto max_user_use_in_window = (virtual_network_capacity_in_window * user_weight) / all_user_weight;
 
@@ -161,7 +164,8 @@ void resource_limits_manager::add_transaction_usage(const flat_set<account_name>
          auto net_used_in_window                 = ((uint128_t)usage.net_usage.value_ex * window_size) / (uint128_t)config::rate_limiting_precision;
 
          uint128_t user_weight     = (uint128_t)net_weight;
-         uint128_t all_user_weight = state.total_net_weight;
+         uint128_t all_user_weight = state.total_net_weight \
+            + _control.get_global_properties().configuration.net_weight_modifier * _db.get_index<resource_limits_index>().indices().size();
 
          auto max_user_use_in_window = (virtual_network_capacity_in_window * user_weight) / all_user_weight;
 
@@ -281,6 +285,9 @@ void resource_limits_manager::get_account_limits( const account_name& account, i
       net_weight = buo.net_weight;
       cpu_weight = buo.cpu_weight;
    }
+
+   net_weight += _control.get_global_properties().configuration.net_weight_modifier;
+   cpu_weight += _control.get_global_properties().configuration.cpu_weight_modifier;
 }
 
 
@@ -387,7 +394,9 @@ account_resource_limit resource_limits_manager::get_account_cpu_limit_ex( const 
 
    uint128_t virtual_cpu_capacity_in_window = (uint128_t)(elastic ? state.virtual_cpu_limit : config.cpu_limit_parameters.max) * window_size;
    uint128_t user_weight     = (uint128_t)cpu_weight;
-   uint128_t all_user_weight = (uint128_t)state.total_cpu_weight;
+   uint128_t all_user_weight = (uint128_t)state.total_cpu_weight \
+      + _control.get_global_properties().configuration.cpu_weight_modifier * _db.get_index<resource_limits_index>().indices().size();
+
 
    auto max_user_use_in_window = (virtual_cpu_capacity_in_window * user_weight) / all_user_weight;
    auto cpu_used_in_window  = impl::integer_divide_ceil((uint128_t)usage.cpu_usage.value_ex * window_size, (uint128_t)config::rate_limiting_precision);
@@ -425,7 +434,8 @@ account_resource_limit resource_limits_manager::get_account_net_limit_ex( const 
 
    uint128_t virtual_network_capacity_in_window = (uint128_t)(elastic ? state.virtual_net_limit : config.net_limit_parameters.max) * window_size;
    uint128_t user_weight     = (uint128_t)net_weight;
-   uint128_t all_user_weight = (uint128_t)state.total_net_weight;
+   uint128_t all_user_weight = (uint128_t)state.total_net_weight \
+      + _control.get_global_properties().configuration.net_weight_modifier * _db.get_index<resource_limits_index>().indices().size();
 
 
    auto max_user_use_in_window = (virtual_network_capacity_in_window * user_weight) / all_user_weight;
