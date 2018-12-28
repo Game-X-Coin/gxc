@@ -5,6 +5,7 @@
 
 #include <eosio/chain/chain_config.hpp>
 #include <eosio/chain/exceptions.hpp>
+#include <eosio/chain/asset.hpp>
 
 namespace eosio { namespace chain {
 
@@ -41,6 +42,9 @@ namespace eosio { namespace chain {
 
       EOS_ASSERT( 1 <= max_authority_depth, action_validate_exception,
                   "max authority depth should be at least 1" );
+
+      EOS_ASSERT( asset(net_weight_modifier).is_valid(), action_validate_exception, "net weight modifier is invalid");
+      EOS_ASSERT( asset(cpu_weight_modifier).is_valid(), action_validate_exception, "cpu weight modifier is invalid");
 }
 
 } } // namespace eosio::chain
