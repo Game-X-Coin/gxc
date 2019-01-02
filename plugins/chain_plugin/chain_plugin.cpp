@@ -17,6 +17,7 @@
 #include <eosio/chain/snapshot.hpp>
 
 #include <eosio/chain/eosio_contract.hpp>
+#include <eosio/chain/global_property_object.hpp>
 
 #include <boost/signals2/connection.hpp>
 #include <boost/algorithm/string.hpp>
@@ -1016,6 +1017,7 @@ std::string itoh(I n, size_t hlen = sizeof(I)<<1) {
 
 read_only::get_info_results read_only::get_info(const read_only::get_info_params&) const {
    const auto& rm = db.get_resource_limits_manager();
+   const auto& chain_config = db.get_global_properties().configuration;
    return {
       itoh(static_cast<uint32_t>(app().version())),
       db.get_chain_id(),
@@ -1029,6 +1031,8 @@ read_only::get_info_results read_only::get_info(const read_only::get_info_params
       rm.get_virtual_block_net_limit(),
       rm.get_block_cpu_limit(),
       rm.get_block_net_limit(),
+      chain_config.net_weight_modifier,
+      chain_config.cpu_weight_modifier,
       //std::bitset<64>(db.get_dynamic_global_properties().recent_slots_filled).to_string(),
       //__builtin_popcountll(db.get_dynamic_global_properties().recent_slots_filled) / 64.0,
       app().version_string(),
