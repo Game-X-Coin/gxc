@@ -286,8 +286,8 @@ void resource_limits_manager::get_account_limits( const account_name& account, i
       cpu_weight = buo.cpu_weight;
    }
 
-   net_weight += _control.get_global_properties().configuration.net_weight_modifier;
-   cpu_weight += _control.get_global_properties().configuration.cpu_weight_modifier;
+   if (net_weight >= 0) net_weight += _control.get_global_properties().configuration.net_weight_modifier;
+   if (cpu_weight >= 0) cpu_weight += _control.get_global_properties().configuration.cpu_weight_modifier;
 }
 
 
