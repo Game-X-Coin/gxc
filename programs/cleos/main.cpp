@@ -1603,6 +1603,9 @@ void get_account( const string& accountName, const string& coresym, bool json_fo
          staked = asset( 0, res.core_liquid_balance->get_symbol() );    // Correct core symbol for staked asset.
       }
 
+      if (!res.nickname.empty())
+         std::cout << "nickname: " << res.nickname << std::endl;
+
       std::cout << "created: " << string(res.created) << std::endl;
 
       if(res.privileged) std::cout << "privileged: true" << std::endl;

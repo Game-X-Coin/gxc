@@ -1757,6 +1757,7 @@ read_only::get_raw_abi_results read_only::get_raw_abi( const get_raw_abi_params&
 read_only::get_account_results read_only::get_account( const get_account_params& params )const {
    get_account_results result;
    result.account_name = params.account_name;
+   result.nickname = get_nickname(params.account_name);
 
    const auto& d = db.db();
    const auto& rm = db.get_resource_limits_manager();
@@ -1968,6 +1969,30 @@ chain::symbol read_only::extract_core_symbol()const {
    }
 
    return core_symbol;
+}
+
+string read_only::get_nickname(name account_name)const {
+   string nickname;
+
+   const auto &d = db.db();
+   const auto* t_id = d.find<chain::table_id_object, chain::by_code_scope_table>(boost::make_tuple(N(gxc.user), N(gxc.user), N(nick)));
+   if (t_id != nullptr) {
+      const auto &idx = d.get_index<key_value_index, by_scope_primary>();
+      auto it = idx.find(boost::make_tuple(t_id->id, account_name.value));
+      if (it != idx.end()) {
+         fc::datastream<const char*> ds(it->value.data(), it->value.size());
+
+         try {
+            name id;
+            fc::raw::unpack(ds, id);
+            fc::raw::unpack(ds, nickname);
+         } catch (...) {
+            return nickname;
+         }
+      }
+   }
+
+   return nickname;
 }
 
 } // namespace chain_apis
