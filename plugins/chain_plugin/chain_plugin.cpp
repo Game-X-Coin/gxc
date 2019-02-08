@@ -1265,120 +1265,118 @@ read_only::get_table_by_scope_result read_only::get_table_by_scope( const read_o
    return result;
 }
 
-fc::variant read_only::get_currency_balance( const read_only::get_currency_balance_params& p )const {
-   fc::mutable_variant_object results;
-   vector<name> contracts;
-   bool abi_found = false;
+vector<fc::variant> read_only::get_currency_balance( const read_only::get_currency_balance_params& p )const {
 
    const abi_def abi = eosio::chain_apis::get_abi( db, p.code );
-   for (const auto& t : abi.tables) {
-      if (t.name == N(accounts)) {
-         abi_found = true;
-         break;
-      }
-   }
+   (void)get_table_type( abi, "accounts" );
 
-   if (abi_found) {
-      contracts.emplace_back(p.code);
-   } else {
-      contracts.emplace_back(N(token.sys));
-      contracts.emplace_back(N(token.std));
-   }
+   vector<fc::variant> results;
+   walk_key_value_table(p.code, p.account, N(accounts), [&](const key_value_object& obj){
+      EOS_ASSERT( obj.value.size() >= sizeof(asset), chain::asset_type_exception, "Invalid data on table");
 
-   for (auto& code : contracts) {
-      walk_key_value_table(code, p.account, N(accounts), [&](const key_value_object& obj){
-         EOS_ASSERT( obj.value.size() >= sizeof(asset), chain::asset_type_exception, "Invalid data on table");
+      asset cursor;
+      fc::datastream<const char *> ds(obj.value.data(), obj.value.size());
+      fc::raw::unpack(ds, cursor);
 
-         fc::datastream<const char *> ds(obj.value.data(), obj.value.size());
-         read_only::get_currency_balance_result_details result;
+      EOS_ASSERT( cursor.get_symbol().valid(), chain::asset_type_exception, "Invalid asset");
 
-         fc::raw::unpack(ds, result.balance);
-         result.deposit = asset(0, result.balance.get_symbol());
-         result.withdrawal_requested = asset(0, result.balance.get_symbol());
-         result.issuer = chain::config::system_account_name;
-
-         if (obj.value.size() > sizeof(asset)) {
-            fc::raw::unpack(ds, result.deposit);
-            fc::raw::unpack(ds, result.issuer);
-
-            walk_key_value_table(code, p.account, "withdraws", [&](const key_value_object& obj2) {
-               EOS_ASSERT( obj2.value.size() >= sizeof(asset) + sizeof(name) + sizeof(fc::time_point_sec), chain::asset_type_exception, "Invalid data on table");
-
-               fc::datastream<const char *> ds2(obj2.value.data(), obj2.value.size());
-               asset quantity;
-               name  issuer;
-               fc::time_point_sec request_time;
-
-               fc::raw::unpack(ds2, quantity);
-               fc::raw::unpack(ds2, issuer);
-               fc::raw::unpack(ds2, request_time);
-
-               if ((quantity.get_symbol() == result.balance.get_symbol()) && (issuer == p.issuer)) {
-                  result.withdrawal_requested = quantity;
-                  result.withdrawal_requested_time = request_time;
-                  return false;
-               }
-               return true;
-            });
+      if (obj.value.size() == sizeof(asset)) {
+         if( !p.symbol || boost::iequals(cursor.symbol_name(), *p.symbol) ) {
+           results.emplace_back(fc::mutable_variant_object("balance", cursor));
          }
+      } else {
+         fc::mutable_variant_object result;
+         fc::variant withdraw;
+         fc::variant options;
 
-         EOS_ASSERT( result.balance.get_symbol().valid(), chain::asset_type_exception, "Invalid asset");
+         name     issuer;
+         int64_t  _deposit;
+         uint64_t _id;
 
-         if( (result.issuer == p.issuer) && (!p.symbol || boost::iequals(result.balance.symbol_name(), *p.symbol)) ) {
-            if (!p.verbose || !(*p.verbose)) {
-               results[result.balance.symbol_name()] = read_only::get_currency_balance_result {result.balance + result.deposit + result.withdrawal_requested};
-            } else {
-               results[result.balance.symbol_name()] = result;
+         fc::raw::unpack(ds, issuer);
+         fc::raw::unpack(ds, _deposit);
+         fc::raw::unpack(ds, _id);
+
+         options = fc::mutable_variant_object()
+            ("frozen", static_cast<bool>((_id >> 56) & 0x1))
+            ("whitelist", static_cast<bool>((_id >> 56) & 0x2));
+
+         walk_key_value_table(p.code, p.account, "withdraws", [&](const key_value_object& obj2) {
+            EOS_ASSERT( obj2.value.size() >= sizeof(asset) + sizeof(name) + sizeof(fc::time_point_sec), chain::asset_type_exception, "Invalid data on table");
+
+            fc::datastream<const char *> ds2(obj2.value.data(), obj2.value.size());
+
+            asset quantity;
+            name  issuer;
+            fc::time_point_sec request_time;
+
+            fc::raw::unpack(ds2, quantity);
+            fc::raw::unpack(ds2, issuer);
+            fc::raw::unpack(ds2, request_time);
+
+            if ((quantity.get_symbol() == cursor.get_symbol()) && (issuer == p.issuer)) {
+               withdraw = fc::mutable_variant_object()
+                  ("quantity", quantity)
+                  ("requested_time", request_time);
+               return false;
             }
-         }
+            return true;
+         });
 
-         // return false if we are looking for one and found it, true otherwise
-         return (result.issuer != p.issuer) || !(p.symbol && boost::iequals(result.balance.symbol_name(), *p.symbol));
-      });
-   }
+         if ((issuer == p.issuer) && (!p.symbol || boost::iequals(cursor.symbol_name(), *p.symbol))) {
+            auto balance = extended_asset(cursor, issuer);
+            auto deposit = extended_asset(asset(_deposit, cursor.get_symbol()), issuer);
+
+            if (!p.verbose || !(*p.verbose)) {
+               result = fc::mutable_variant_object()
+                  ("total", extended_asset(balance.quantity + deposit.quantity, issuer));
+            } else {
+               result = fc::mutable_variant_object()
+                  ("total", extended_asset(balance.quantity + deposit.quantity, issuer))
+                  ("balance", balance)
+                  ("deposit", deposit)
+                  ("withdraw", withdraw)
+                  ("options", options);
+            }
+
+            results.emplace_back(result);
+         }
+      }
+
+      // return false if we are looking for one and found it, true otherwise
+      return !(p.symbol && boost::iequals(cursor.symbol_name(), *p.symbol));
+   });
 
    return results;
 }
 
 fc::variant read_only::get_currency_stats( const read_only::get_currency_stats_params& p )const {
    fc::mutable_variant_object results;
-   account_name code;
-   bool abi_found = false;
 
    const abi_def abi = eosio::chain_apis::get_abi( db, p.code );
-   for (const auto& t : abi.tables) {
-      if (t.name == N(stat)) {
-         abi_found = true;
-         break;
-      }
-   }
+   (void)get_table_type( abi, "stat");
 
-   if (abi_found) {
-      code = p.code;
-      //scope = ( eosio::chain::string_to_symbol( 0, boost::algorithm::to_upper_copy(p.symbol).c_str() ) >> 8 );
-   } else {
-      walk_key_value_table(N(gxc.token), p.issuer, N(token), [&](const key_value_object& obj) {
-         EOS_ASSERT( obj.value.size() >= sizeof(name) + sizeof(symbol), chain::asset_type_exception, "Invalid data on table");
+   uint64_t scope = ( eosio::chain::string_to_symbol( 0, boost::algorithm::to_upper_copy(p.symbol).c_str() ) >> 8 );
 
-         symbol sym;
-
-         fc::datastream<const char *> ds(obj.value.data(), obj.value.size());
-         fc::raw::unpack(ds, code);
-         fc::raw::unpack(ds, sym);
-
-         return p.symbol != sym.to_string();
-      });
-   }
-
-   walk_key_value_table(code, p.issuer, N(stat), [&](const key_value_object& obj){
+   walk_key_value_table(p.code, p.issuer, N(stat), [&](const key_value_object& obj){
       EOS_ASSERT( obj.value.size() >= sizeof(read_only::get_currency_stats_result), chain::asset_type_exception, "Invalid data on table");
 
       fc::datastream<const char *> ds(obj.value.data(), obj.value.size());
       read_only::get_currency_stats_result result;
 
-      fc::raw::unpack(ds, result.supply);
-      fc::raw::unpack(ds, result.max_supply);
-      fc::raw::unpack(ds, result.issuer);
+      if (obj.value.size() == sizeof(read_only::get_currency_stats_result)) {
+         fc::raw::unpack(ds, result.supply);
+         fc::raw::unpack(ds, result.max_supply);
+         fc::raw::unpack(ds, result.issuer);
+      } else {
+         chain::share_type _max_supply;
+
+         fc::raw::unpack(ds, result.supply);
+         fc::raw::unpack(ds, _max_supply);
+         fc::raw::unpack(ds, result.issuer);
+
+         result.max_supply = asset(_max_supply, result.supply.get_symbol());
+      }
 
       if (p.symbol == result.supply.symbol_name()) {
          results[result.supply.symbol_name()] = result;
