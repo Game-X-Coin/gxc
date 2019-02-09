@@ -1309,17 +1309,17 @@ vector<fc::variant> read_only::get_currency_balance( const read_only::get_curren
 
             asset quantity;
             name  issuer;
-            fc::time_point_sec request_time;
+            fc::time_point_sec scheduled_time;
 
             fc::raw::unpack(ds2, quantity);
             fc::raw::unpack(ds2, issuer);
-            fc::raw::unpack(ds2, request_time);
+            fc::raw::unpack(ds2, scheduled_time);
 
             if ((quantity.get_symbol() == cursor.get_symbol()) && (issuer == p.issuer)) {
                total += quantity;
                withdraw = fc::mutable_variant_object()
-                  ("quantity", quantity)
-                  ("requested_time", request_time);
+                  ("quantity", extended_asset(quantity, issuer))
+                  ("scheduled_time", scheduled_time);
                return false;
             }
             return true;
