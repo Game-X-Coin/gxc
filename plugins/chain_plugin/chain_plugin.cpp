@@ -1288,6 +1288,7 @@ vector<fc::variant> read_only::get_currency_balance( const read_only::get_curren
          fc::mutable_variant_object result;
          fc::variant withdraw;
          fc::variant options;
+         asset total = asset(0, cursor.get_symbol());
 
          name     issuer;
          int64_t  _deposit;
@@ -1315,6 +1316,7 @@ vector<fc::variant> read_only::get_currency_balance( const read_only::get_curren
             fc::raw::unpack(ds2, request_time);
 
             if ((quantity.get_symbol() == cursor.get_symbol()) && (issuer == p.issuer)) {
+               total += quantity;
                withdraw = fc::mutable_variant_object()
                   ("quantity", quantity)
                   ("requested_time", request_time);
@@ -1327,12 +1329,14 @@ vector<fc::variant> read_only::get_currency_balance( const read_only::get_curren
             auto balance = extended_asset(cursor, issuer);
             auto deposit = extended_asset(asset(_deposit, cursor.get_symbol()), issuer);
 
+            total += (balance.quantity + deposit.quantity);
+
             if (!p.verbose || !(*p.verbose)) {
                result = fc::mutable_variant_object()
-                  ("total", extended_asset(balance.quantity + deposit.quantity, issuer));
+                  ("total", extended_asset(total, issuer));
             } else {
                result = fc::mutable_variant_object()
-                  ("total", extended_asset(balance.quantity + deposit.quantity, issuer))
+                  ("total", extended_asset(total, issuer))
                   ("balance", balance)
                   ("deposit", deposit)
                   ("withdraw", withdraw)
