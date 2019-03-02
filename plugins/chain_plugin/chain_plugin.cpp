@@ -1290,17 +1290,16 @@ vector<fc::variant> read_only::get_currency_balance( const read_only::get_curren
          fc::variant options;
          asset total = asset(0, cursor.get_symbol());
 
-         name     issuer;
+         uint64_t _issuer;
          int64_t  _deposit;
-         uint64_t _id;
 
-         fc::raw::unpack(ds, issuer);
+         fc::raw::unpack(ds, _issuer);
          fc::raw::unpack(ds, _deposit);
-         fc::raw::unpack(ds, _id);
 
+         name issuer = _issuer & 0xFFFFFFFFFFFFFFF0ULL;
          options = fc::mutable_variant_object()
-            ("frozen", static_cast<bool>((_id >> 56) & 0x1))
-            ("whitelist", static_cast<bool>((_id >> 56) & 0x2));
+            ("frozen", static_cast<bool>(_issuer & 0x1))
+            ("whitelist", static_cast<bool>(_issuer & 0x2));
 
          walk_key_value_table(p.code, p.account, "withdraws", [&](const key_value_object& obj2) {
             EOS_ASSERT( obj2.value.size() >= sizeof(asset) + sizeof(name) + sizeof(fc::time_point_sec), chain::asset_type_exception, "Invalid data on table");
