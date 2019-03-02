@@ -318,7 +318,7 @@ public:
       optional<bool>   verbose;
    };
 
-   vector<fc::variant> get_currency_balance( const get_currency_balance_params& params )const;
+   fc::variant get_currency_balance( const get_currency_balance_params& params )const;
 
    struct get_currency_stats_params {
       name           code;

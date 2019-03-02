@@ -1265,12 +1265,12 @@ read_only::get_table_by_scope_result read_only::get_table_by_scope( const read_o
    return result;
 }
 
-vector<fc::variant> read_only::get_currency_balance( const read_only::get_currency_balance_params& p )const {
+fc::variant read_only::get_currency_balance( const read_only::get_currency_balance_params& p )const {
 
    const abi_def abi = eosio::chain_apis::get_abi( db, p.code );
    (void)get_table_type( abi, "accounts" );
 
-   vector<fc::variant> results;
+   fc::mutable_variant_object results;
    walk_key_value_table(p.code, p.account, N(accounts), [&](const key_value_object& obj){
       EOS_ASSERT( obj.value.size() >= sizeof(asset), chain::asset_type_exception, "Invalid data on table");
 
@@ -1280,23 +1280,40 @@ vector<fc::variant> read_only::get_currency_balance( const read_only::get_curren
 
       EOS_ASSERT( cursor.get_symbol().valid(), chain::asset_type_exception, "Invalid asset");
 
+      fc::mutable_variant_object result;
+
       if (obj.value.size() == sizeof(asset)) {
          if( !p.symbol || boost::iequals(cursor.symbol_name(), *p.symbol) ) {
-           results.emplace_back(fc::mutable_variant_object("balance", cursor));
+            result["balance"] = cursor;
+            results[cursor.symbol_name()] = result;
          }
       } else {
-         fc::mutable_variant_object result;
+         auto rootname = [](const name& n) -> eosio::name {
+            auto mask = (uint64_t) -1;
+            for (auto i = 0; i < 12; ++i) {
+               if (n.value & (0x1FULL << (4 + 5 * (11 - i))))
+                  continue;
+               mask <<= 4 + 5 * (11 - i);
+               break;
+            }
+            return name(n.value & mask);
+         };
+
+         uint64_t _issuer;
+         fc::raw::unpack(ds, _issuer);
+
+         name issuer = _issuer & 0xFFFFFFFFFFFFFFF0ULL;
+
+         if( (p.symbol && !boost::iequals(cursor.symbol_name(), *p.symbol)) || ((issuer != p.issuer) && (rootname(issuer) != p.issuer)) )
+            return true;
+
          fc::variant withdraw;
          fc::variant options;
          asset total = asset(0, cursor.get_symbol());
 
-         uint64_t _issuer;
          int64_t  _deposit;
-
-         fc::raw::unpack(ds, _issuer);
          fc::raw::unpack(ds, _deposit);
 
-         name issuer = _issuer & 0xFFFFFFFFFFFFFFF0ULL;
          options = fc::mutable_variant_object()
             ("frozen", static_cast<bool>(_issuer & 0x1))
             ("whitelist", static_cast<bool>(_issuer & 0x2));
@@ -1324,26 +1341,24 @@ vector<fc::variant> read_only::get_currency_balance( const read_only::get_curren
             return true;
          });
 
-         if ((issuer == p.issuer) && (!p.symbol || boost::iequals(cursor.symbol_name(), *p.symbol))) {
-            auto balance = extended_asset(cursor, issuer);
-            auto deposit = extended_asset(asset(_deposit, cursor.get_symbol()), issuer);
+         auto deposit = asset(_deposit, cursor.get_symbol());
 
-            total += (balance.quantity + deposit.quantity);
+         total += cursor + deposit;
 
-            if (!p.verbose || !(*p.verbose)) {
-               result = fc::mutable_variant_object()
-                  ("total", extended_asset(total, issuer));
-            } else {
-               result = fc::mutable_variant_object()
-                  ("total", extended_asset(total, issuer))
-                  ("balance", balance)
-                  ("deposit", deposit)
-                  ("withdraw", withdraw)
-                  ("options", options);
-            }
-
-            results.emplace_back(result);
+         if (!p.verbose || !(*p.verbose)) {
+            result["total"] = total;
+         } else {
+            result["total"] = total;
+            result["balance"] = cursor;
+            result["deposit"] = deposit;
+            result["withdraw"] = withdraw;
+            result["options"] = options;
          }
+
+         if( results.find(issuer.to_string()) != results.end() )
+            results[issuer.to_string()] = fc::mutable_variant_object(results[issuer.to_string()])(cursor.symbol_name(), result);
+         else 
+            results[issuer.to_string()] = fc::mutable_variant_object()(cursor.symbol_name(), result);
       }
 
       // return false if we are looking for one and found it, true otherwise
