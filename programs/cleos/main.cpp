@@ -2204,7 +2204,6 @@ int main( int argc, char** argv ) {
    // get currency balance
    string symbol;
    string issuer;
-   bool verbose_balance = false;
    auto get_currency = get->add_subcommand( "currency", localized("Retrieve information related to standard currencies"), true);
    get_currency->require_subcommand();
    auto get_balance = get_currency->add_subcommand( "balance", localized("Retrieve the balance of an account for a given currency"), false);
@@ -2212,13 +2211,13 @@ int main( int argc, char** argv ) {
    get_balance->add_option( "account", accountName, localized("The account to query balances for") )->required();
    get_balance->add_option( "issuer", issuer, localized("The name of account issuing currency") )->required();
    get_balance->add_option( "symbol", symbol, localized("The symbol for the currency if the contract operates multiple currencies") );
-   get_balance->add_flag("--verbose-balance", verbose_balance, localized("Print verbose balance"));
+   get_balance->add_flag("-v,--verbose", verbose_errors, localized("Print verbose balance"));
    get_balance->set_callback([&] {
       auto result = call(get_currency_balance_func, fc::mutable_variant_object
          ("account", accountName)
          ("code", code)
          ("issuer", issuer)
-         ("verbose", verbose_balance)
+         ("verbose", verbose_errors)
          ("symbol", symbol.empty() ? fc::variant() : symbol)
       );
 
