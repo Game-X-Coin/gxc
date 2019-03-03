@@ -577,12 +577,12 @@ chain::action create_open(const string& contract, const name& owner, symbol sym,
    };
 }
 
-chain::action create_transfer(const string& contract, const name& sender, const name& recipient, asset amount, const string& memo ) {
+chain::action create_transfer(const string& contract, const name& sender, const name& recipient, extended_asset amount, const string& memo ) {
 
    auto transfer = fc::mutable_variant_object
       ("from", sender)
       ("to", recipient)
-      ("quantity", amount)
+      ("value", amount)
       ("memo", memo);
 
    return action {
@@ -660,8 +660,8 @@ asset to_asset( account_name code, const string& s, const string& issuer = "gxc"
    if ( it == cache.end() ) {
       auto json = call(get_currency_stats_func, fc::mutable_variant_object("json", false)
                        ("code", code)
-                       ("symbol", sym_str)
                        ("issuer", issuer)
+                       ("symbol", sym_str)
       );
       auto obj = json.get_object();
       auto obj_it = obj.find( sym_str );
@@ -2203,7 +2203,7 @@ int main( int argc, char** argv ) {
    // currency accessors
    // get currency balance
    string symbol;
-   string issuer;
+   string issuer = name(chain::config::system_account_name).to_string();
    auto get_currency = get->add_subcommand( "currency", localized("Retrieve information related to standard currencies"), true);
    get_currency->require_subcommand();
    auto get_balance = get_currency->add_subcommand( "balance", localized("Retrieve the balance of an account for a given currency"), false);
@@ -2227,13 +2227,13 @@ int main( int argc, char** argv ) {
 
    auto get_currency_stats = get_currency->add_subcommand( "stats", localized("Retrieve the stats of for a given currency"), false);
    get_currency_stats->add_option( "contract", code, localized("The contract that operates the currency") )->required();
-   get_currency_stats->add_option( "symbol", symbol, localized("The symbol for the currency if the contract operates multiple currencies") )->required();
    get_currency_stats->add_option( "issuer", issuer, localized("The name of account issuing currency") )->required();
+   get_currency_stats->add_option( "symbol", symbol, localized("The symbol for the currency if the contract operates multiple currencies") );
    get_currency_stats->set_callback([&] {
       auto result = call(get_currency_stats_func, fc::mutable_variant_object("json", false)
          ("code", code)
-         ("symbol", symbol)
          ("issuer", issuer)
+         ("symbol", (symbol.empty()) ? fc::variant() : symbol)
       );
 
       std::cout << fc::json::to_pretty_string(result)
@@ -2600,7 +2600,7 @@ int main( int argc, char** argv ) {
    auto setActionPermission = set_action_permission_subcommand(setAction);
 
    // Transfer subcommand
-   string con = "eosio.token";
+   string con = "gxc.token";
    string sender;
    string recipient;
    string amount;
@@ -2611,7 +2611,7 @@ int main( int argc, char** argv ) {
    transfer->add_option("recipient", recipient, localized("The account receiving tokens"))->required();
    transfer->add_option("amount", amount, localized("The amount of tokens to send"))->required();
    transfer->add_option("memo", memo, localized("The memo for the transfer"));
-   transfer->add_option("--contract,-c", con, localized("The contract which controls the token"));
+   transfer->add_option("--contract,-c", issuer, localized("The contract which controls the token"));
    transfer->add_flag("--pay-ram-to-open", pay_ram, localized("Pay ram to open recipient's token balance row"));
 
    add_standard_transaction_options(transfer, "sender@active");
@@ -2622,13 +2622,13 @@ int main( int argc, char** argv ) {
          tx_force_unique = false;
       }
 
-      auto transfer_amount = to_asset(con, amount);
+      auto transfer_amount = extended_asset(to_asset(con, amount, issuer), issuer);
       auto transfer = create_transfer(con, sender, recipient, transfer_amount, memo);
       if (!pay_ram) {
          send_actions( { transfer });
       } else {
-         auto open_ = create_open(con, recipient, transfer_amount.get_symbol(), sender);
-         send_actions( { open_, transfer } );
+         //auto open_ = create_open(con, recipient, transfer_amount.get_symbol(), sender);
+         //send_actions( { open_, transfer } );
       }
    });
 
