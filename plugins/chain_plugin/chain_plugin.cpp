@@ -1308,15 +1308,18 @@ fc::variant read_only::get_currency_balance( const read_only::get_currency_balan
             return true;
 
          fc::variant withdraw;
-         fc::variant options;
          asset total = asset(0, cursor.get_symbol());
 
          int64_t  _deposit;
          fc::raw::unpack(ds, _deposit);
 
-         options = fc::mutable_variant_object()
-            ("frozen", static_cast<bool>(_issuer & 0x1))
-            ("whitelist", static_cast<bool>(_issuer & 0x2));
+         auto get_opt = [=](size_t pos) -> bool {
+            return (_issuer >> pos) & 1;
+         };
+
+         fc::variant options = fc::mutable_variant_object()
+            ("frozen", get_opt(0))
+            ("whitelist", get_opt(1));
 
          walk_key_value_table(p.code, p.account, "withdraws", [&](const key_value_object& obj2) {
             EOS_ASSERT( obj2.value.size() >= sizeof(asset) + sizeof(name) + sizeof(fc::time_point_sec), chain::asset_type_exception, "Invalid data on table");
@@ -1334,7 +1337,7 @@ fc::variant read_only::get_currency_balance( const read_only::get_currency_balan
             if ((quantity.get_symbol() == cursor.get_symbol()) && (issuer == p.issuer)) {
                total += quantity;
                withdraw = fc::mutable_variant_object()
-                  ("quantity", extended_asset(quantity, issuer))
+                  ("quantity", quantity)
                   ("scheduled_time", scheduled_time);
                return false;
             }
@@ -1374,7 +1377,7 @@ fc::variant read_only::get_currency_stats( const read_only::get_currency_stats_p
    const abi_def abi = eosio::chain_apis::get_abi( db, p.code );
    (void)get_table_type( abi, "stat");
 
-   uint64_t scope = ( eosio::chain::string_to_symbol( 0, boost::algorithm::to_upper_copy(p.symbol).c_str() ) >> 8 );
+   //uint64_t scope = ( eosio::chain::string_to_symbol( 0, boost::algorithm::to_upper_copy(p.symbol).c_str() ) >> 8 );
 
    walk_key_value_table(p.code, p.issuer, N(stat), [&](const key_value_object& obj){
       EOS_ASSERT( obj.value.size() >= sizeof(read_only::get_currency_stats_result), chain::asset_type_exception, "Invalid data on table");
@@ -1382,24 +1385,49 @@ fc::variant read_only::get_currency_stats( const read_only::get_currency_stats_p
       fc::datastream<const char *> ds(obj.value.data(), obj.value.size());
       read_only::get_currency_stats_result result;
 
+      fc::raw::unpack(ds, result.supply);
+      if( p.symbol && !boost::iequals(result.supply.symbol_name(), *p.symbol) )
+         return true;
+
       if (obj.value.size() == sizeof(read_only::get_currency_stats_result)) {
-         fc::raw::unpack(ds, result.supply);
          fc::raw::unpack(ds, result.max_supply);
          fc::raw::unpack(ds, result.issuer);
+         results[result.supply.symbol_name()] = result;
       } else {
          chain::share_type _max_supply;
+         uint32_t _opts;
+         uint32_t withdraw_delay_sec;
+         int64_t _withdraw_min_amount;
 
-         fc::raw::unpack(ds, result.supply);
          fc::raw::unpack(ds, _max_supply);
          fc::raw::unpack(ds, result.issuer);
+         fc::raw::unpack(ds, _opts);
+         fc::raw::unpack(ds, withdraw_delay_sec);
+         fc::raw::unpack(ds, _withdraw_min_amount);
 
          result.max_supply = asset(_max_supply, result.supply.get_symbol());
+
+         auto get_opt = [=](size_t pos) -> bool {
+            return (_opts >> pos) & 1;
+         };
+
+         fc::variant options = fc::mutable_variant_object()
+            ("can_recall", get_opt(0))
+            ("can_freeze", get_opt(1))
+            ("can_whitelist", get_opt(2))
+            ("is_frozen", get_opt(3))
+            ("enforce_whitelist", get_opt(4))
+            ("withdraw_delay_sec", (get_opt(0)) ? withdraw_delay_sec : fc::variant())
+            ("withdraw_min_amount", (get_opt(0)) ? asset(_withdraw_min_amount, result.supply.get_symbol()).to_string() : fc::variant());
+
+         results[result.supply.symbol_name()] = fc::mutable_variant_object()
+            ("supply", result.supply)
+            ("max_supply", result.max_supply)
+            ("issuer", result.issuer)
+            ("options", options);
       }
 
-      if (p.symbol == result.supply.symbol_name()) {
-         results[result.supply.symbol_name()] = result;
-      }
-      return p.symbol != result.supply.symbol_name();
+      return !p.symbol || !boost::iequals(*p.symbol, result.supply.symbol_name());
    });
 
    return results;

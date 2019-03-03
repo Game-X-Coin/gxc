@@ -321,9 +321,9 @@ public:
    fc::variant get_currency_balance( const get_currency_balance_params& params )const;
 
    struct get_currency_stats_params {
-      name           code;
-      string         symbol;
-      name           issuer;
+      name             code;
+      name             issuer;
+      optional<string> symbol;
    };
 
    struct get_currency_stats_result {
@@ -726,9 +726,9 @@ FC_REFLECT( eosio::chain_apis::read_only::get_table_by_scope_params, (code)(tabl
 FC_REFLECT( eosio::chain_apis::read_only::get_table_by_scope_result_row, (code)(scope)(table)(payer)(count));
 FC_REFLECT( eosio::chain_apis::read_only::get_table_by_scope_result, (rows)(more) );
 
-FC_REFLECT( eosio::chain_apis::read_only::get_currency_balance_params, (code)(account)(issuer)(symbol)(verbose));
-FC_REFLECT( eosio::chain_apis::read_only::get_currency_stats_params, (code)(symbol)(issuer));
-FC_REFLECT( eosio::chain_apis::read_only::get_currency_stats_result, (supply)(max_supply)(issuer));
+FC_REFLECT( eosio::chain_apis::read_only::get_currency_balance_params, (code)(account)(issuer)(symbol)(verbose) );
+FC_REFLECT( eosio::chain_apis::read_only::get_currency_stats_params, (code)(issuer)(symbol) );
+FC_REFLECT( eosio::chain_apis::read_only::get_currency_stats_result, (supply)(max_supply)(issuer) );
 
 FC_REFLECT( eosio::chain_apis::read_only::get_producers_params, (json)(lower_bound)(limit) )
 FC_REFLECT( eosio::chain_apis::read_only::get_producers_result, (rows)(total_producer_vote_weight)(more) );
