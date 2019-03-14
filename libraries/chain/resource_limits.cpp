@@ -1,3 +1,5 @@
+#include <eosio/chain/controller.hpp>
+#include <eosio/chain/global_property_object.hpp>
 #include <eosio/chain/exceptions.hpp>
 #include <eosio/chain/resource_limits.hpp>
 #include <eosio/chain/resource_limits_private.hpp>
@@ -142,7 +144,8 @@ void resource_limits_manager::add_transaction_usage(const flat_set<account_name>
          auto cpu_used_in_window                 = ((uint128_t)usage.cpu_usage.value_ex * window_size) / (uint128_t)config::rate_limiting_precision;
 
          uint128_t user_weight     = (uint128_t)cpu_weight;
-         uint128_t all_user_weight = state.total_cpu_weight;
+         uint128_t all_user_weight = state.total_cpu_weight \
+            + _control.get_global_properties().configuration.cpu_weight_modifier * _db.get_index<resource_limits_index>().indices().size();
 
          auto max_user_use_in_window = (virtual_network_capacity_in_window * user_weight) / all_user_weight;
 
@@ -161,7 +164,8 @@ void resource_limits_manager::add_transaction_usage(const flat_set<account_name>
          auto net_used_in_window                 = ((uint128_t)usage.net_usage.value_ex * window_size) / (uint128_t)config::rate_limiting_precision;
 
          uint128_t user_weight     = (uint128_t)net_weight;
-         uint128_t all_user_weight = state.total_net_weight;
+         uint128_t all_user_weight = state.total_net_weight \
+            + _control.get_global_properties().configuration.net_weight_modifier * _db.get_index<resource_limits_index>().indices().size();
 
          auto max_user_use_in_window = (virtual_network_capacity_in_window * user_weight) / all_user_weight;
 
@@ -208,7 +212,7 @@ void resource_limits_manager::verify_account_ram_usage( const account_name accou
    const auto& usage  = _db.get<resource_usage_object,by_owner>( account );
 
    if( ram_bytes >= 0 ) {
-      EOS_ASSERT( usage.ram_usage <= ram_bytes, ram_usage_exceeded,
+      EOS_ASSERT( usage.ram_usage <= static_cast<uint64_t>(ram_bytes), ram_usage_exceeded,
                   "account ${account} has insufficient ram; needs ${needs} bytes has ${available} bytes",
                   ("account", account)("needs",usage.ram_usage)("available",ram_bytes)              );
    }
@@ -281,6 +285,9 @@ void resource_limits_manager::get_account_limits( const account_name& account, i
       net_weight = buo.net_weight;
       cpu_weight = buo.cpu_weight;
    }
+
+   if (net_weight >= 0) net_weight += _control.get_global_properties().configuration.net_weight_modifier;
+   if (cpu_weight >= 0) cpu_weight += _control.get_global_properties().configuration.cpu_weight_modifier;
 }
 
 
@@ -291,12 +298,12 @@ void resource_limits_manager::process_account_limit_updates() {
    // convenience local lambda to reduce clutter
    auto update_state_and_value = [](uint64_t &total, int64_t &value, int64_t pending_value, const char* debug_which) -> void {
       if (value > 0) {
-         EOS_ASSERT(total >= value, rate_limiting_state_inconsistent, "underflow when reverting old value to ${which}", ("which", debug_which));
+         EOS_ASSERT(total >= static_cast<uint64_t>(value), rate_limiting_state_inconsistent, "underflow when reverting old value to ${which}", ("which", debug_which));
          total -= value;
       }
 
       if (pending_value > 0) {
-         EOS_ASSERT(UINT64_MAX - total >= pending_value, rate_limiting_state_inconsistent, "overflow when applying new value to ${which}", ("which", debug_which));
+         EOS_ASSERT(UINT64_MAX - total >= static_cast<uint64_t>(pending_value), rate_limiting_state_inconsistent, "overflow when applying new value to ${which}", ("which", debug_which));
          total += pending_value;
       }
 
@@ -387,7 +394,9 @@ account_resource_limit resource_limits_manager::get_account_cpu_limit_ex( const 
 
    uint128_t virtual_cpu_capacity_in_window = (uint128_t)(elastic ? state.virtual_cpu_limit : config.cpu_limit_parameters.max) * window_size;
    uint128_t user_weight     = (uint128_t)cpu_weight;
-   uint128_t all_user_weight = (uint128_t)state.total_cpu_weight;
+   uint128_t all_user_weight = (uint128_t)state.total_cpu_weight \
+      + _control.get_global_properties().configuration.cpu_weight_modifier * _db.get_index<resource_limits_index>().indices().size();
+
 
    auto max_user_use_in_window = (virtual_cpu_capacity_in_window * user_weight) / all_user_weight;
    auto cpu_used_in_window  = impl::integer_divide_ceil((uint128_t)usage.cpu_usage.value_ex * window_size, (uint128_t)config::rate_limiting_precision);
@@ -425,7 +434,8 @@ account_resource_limit resource_limits_manager::get_account_net_limit_ex( const 
 
    uint128_t virtual_network_capacity_in_window = (uint128_t)(elastic ? state.virtual_net_limit : config.net_limit_parameters.max) * window_size;
    uint128_t user_weight     = (uint128_t)net_weight;
-   uint128_t all_user_weight = (uint128_t)state.total_net_weight;
+   uint128_t all_user_weight = (uint128_t)state.total_net_weight \
+      + _control.get_global_properties().configuration.net_weight_modifier * _db.get_index<resource_limits_index>().indices().size();
 
 
    auto max_user_use_in_window = (virtual_network_capacity_in_window * user_weight) / all_user_weight;

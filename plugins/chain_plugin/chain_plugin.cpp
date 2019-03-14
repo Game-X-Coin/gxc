@@ -17,6 +17,7 @@
 #include <eosio/chain/snapshot.hpp>
 
 #include <eosio/chain/eosio_contract.hpp>
+#include <eosio/chain/global_property_object.hpp>
 
 #include <boost/signals2/connection.hpp>
 #include <boost/algorithm/string.hpp>
@@ -146,7 +147,6 @@ public:
    ,irreversible_block_channel(app().get_channel<channels::irreversible_block>())
    ,accepted_transaction_channel(app().get_channel<channels::accepted_transaction>())
    ,applied_transaction_channel(app().get_channel<channels::applied_transaction>())
-   ,accepted_confirmation_channel(app().get_channel<channels::accepted_confirmation>())
    ,incoming_block_channel(app().get_channel<incoming::channels::block>())
    ,incoming_block_sync_method(app().get_method<incoming::methods::block_sync>())
    ,incoming_transaction_async_method(app().get_method<incoming::methods::transaction_async>())
@@ -174,7 +174,6 @@ public:
    channels::irreversible_block::channel_type&     irreversible_block_channel;
    channels::accepted_transaction::channel_type&   accepted_transaction_channel;
    channels::applied_transaction::channel_type&    applied_transaction_channel;
-   channels::accepted_confirmation::channel_type&  accepted_confirmation_channel;
    incoming::channels::block::channel_type&         incoming_block_channel;
 
    // retained references to methods for easy calling
@@ -194,13 +193,13 @@ public:
    fc::optional<scoped_connection>                                   irreversible_block_connection;
    fc::optional<scoped_connection>                                   accepted_transaction_connection;
    fc::optional<scoped_connection>                                   applied_transaction_connection;
-   fc::optional<scoped_connection>                                   accepted_confirmation_connection;
-
 
 };
 
 chain_plugin::chain_plugin()
 :my(new chain_plugin_impl()) {
+   app().register_config_type<eosio::chain::db_read_mode>();
+   app().register_config_type<eosio::chain::validation_mode>();
 }
 
 chain_plugin::~chain_plugin(){}
@@ -672,35 +671,30 @@ void chain_plugin::plugin_initialize(const variables_map& options) {
             );
          }
 
-         my->pre_accepted_block_channel.publish(blk);
+         my->pre_accepted_block_channel.publish(priority::medium, blk);
       });
 
       my->accepted_block_header_connection = my->chain->accepted_block_header.connect(
             [this]( const block_state_ptr& blk ) {
-               my->accepted_block_header_channel.publish( blk );
+               my->accepted_block_header_channel.publish( priority::medium, blk );
             } );
 
       my->accepted_block_connection = my->chain->accepted_block.connect( [this]( const block_state_ptr& blk ) {
-         my->accepted_block_channel.publish( blk );
+         my->accepted_block_channel.publish( priority::high, blk );
       } );
 
       my->irreversible_block_connection = my->chain->irreversible_block.connect( [this]( const block_state_ptr& blk ) {
-         my->irreversible_block_channel.publish( blk );
+         my->irreversible_block_channel.publish( priority::low, blk );
       } );
 
       my->accepted_transaction_connection = my->chain->accepted_transaction.connect(
             [this]( const transaction_metadata_ptr& meta ) {
-               my->accepted_transaction_channel.publish( meta );
+               my->accepted_transaction_channel.publish( priority::low, meta );
             } );
 
       my->applied_transaction_connection = my->chain->applied_transaction.connect(
             [this]( const transaction_trace_ptr& trace ) {
-               my->applied_transaction_channel.publish( trace );
-            } );
-
-      my->accepted_confirmation_connection = my->chain->accepted_confirmation.connect(
-            [this]( const header_confirmation& conf ) {
-               my->accepted_confirmation_channel.publish( conf );
+               my->applied_transaction_channel.publish( priority::low, trace );
             } );
 
       my->chain->add_indices();
@@ -744,7 +738,6 @@ void chain_plugin::plugin_shutdown() {
    my->irreversible_block_connection.reset();
    my->accepted_transaction_connection.reset();
    my->applied_transaction_connection.reset();
-   my->accepted_confirmation_connection.reset();
    my->chain->get_thread_pool().stop();
    my->chain->get_thread_pool().join();
    my->chain.reset();
@@ -890,7 +883,7 @@ bool chain_plugin::import_reversible_blocks( const fc::path& reversible_dir,
    reversible_blocks.open( reversible_blocks_file.generic_string().c_str(), std::ios::in | std::ios::binary );
 
    reversible_blocks.seekg( 0, std::ios::end );
-   uint64_t end_pos = reversible_blocks.tellg();
+   auto end_pos = reversible_blocks.tellg();
    reversible_blocks.seekg( 0 );
 
    uint32_t num = 0;
@@ -1029,6 +1022,7 @@ std::string itoh(I n, size_t hlen = sizeof(I)<<1) {
 
 read_only::get_info_results read_only::get_info(const read_only::get_info_params&) const {
    const auto& rm = db.get_resource_limits_manager();
+   const auto& chain_config = db.get_global_properties().configuration;
    return {
       itoh(static_cast<uint32_t>(app().version())),
       db.get_chain_id(),
@@ -1042,6 +1036,8 @@ read_only::get_info_results read_only::get_info(const read_only::get_info_params
       rm.get_virtual_block_net_limit(),
       rm.get_block_cpu_limit(),
       rm.get_block_net_limit(),
+      chain_config.net_weight_modifier,
+      chain_config.cpu_weight_modifier,
       //std::bitset<64>(db.get_dynamic_global_properties().recent_slots_filled).to_string(),
       //__builtin_popcountll(db.get_dynamic_global_properties().recent_slots_filled) / 64.0,
       app().version_string(),
@@ -1156,7 +1152,8 @@ string get_table_type( const abi_def& abi, const name& table_name ) {
 
 read_only::get_table_rows_result read_only::get_table_rows( const read_only::get_table_rows_params& p )const {
    const abi_def abi = eosio::chain_apis::get_abi( db, p.code );
-
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
    bool primary = false;
    auto table_with_index = get_table_index_name( p, primary );
    if( primary ) {
@@ -1211,6 +1208,7 @@ read_only::get_table_rows_result read_only::get_table_rows( const read_only::get
       }
       EOS_ASSERT(false, chain::contract_table_query_exception,  "Unsupported secondary index type: ${t}", ("t", p.key_type));
    }
+#pragma GCC diagnostic pop
 }
 
 read_only::get_table_by_scope_result read_only::get_table_by_scope( const read_only::get_table_by_scope_params& p )const {
@@ -1261,12 +1259,12 @@ read_only::get_table_by_scope_result read_only::get_table_by_scope( const read_o
    return result;
 }
 
-vector<asset> read_only::get_currency_balance( const read_only::get_currency_balance_params& p )const {
+fc::variant read_only::get_currency_balance( const read_only::get_currency_balance_params& p )const {
 
    const abi_def abi = eosio::chain_apis::get_abi( db, p.code );
    (void)get_table_type( abi, "accounts" );
 
-   vector<asset> results;
+   fc::mutable_variant_object results;
    walk_key_value_table(p.code, p.account, N(accounts), [&](const key_value_object& obj){
       EOS_ASSERT( obj.value.size() >= sizeof(asset), chain::asset_type_exception, "Invalid data on table");
 
@@ -1276,8 +1274,88 @@ vector<asset> read_only::get_currency_balance( const read_only::get_currency_bal
 
       EOS_ASSERT( cursor.get_symbol().valid(), chain::asset_type_exception, "Invalid asset");
 
-      if( !p.symbol || boost::iequals(cursor.symbol_name(), *p.symbol) ) {
-        results.emplace_back(cursor);
+      fc::mutable_variant_object result;
+
+      if (obj.value.size() == sizeof(asset)) {
+         if( !p.symbol || boost::iequals(cursor.symbol_name(), *p.symbol) ) {
+            result["balance"] = cursor;
+            results[cursor.symbol_name()] = result;
+         }
+      } else {
+         auto rootname = [](const name& n) -> eosio::name {
+            auto mask = (uint64_t) -1;
+            for (auto i = 0; i < 12; ++i) {
+               if (n.value & (0x1FULL << (4 + 5 * (11 - i))))
+                  continue;
+               mask <<= 4 + 5 * (11 - i);
+               break;
+            }
+            return name(n.value & mask);
+         };
+
+         uint64_t _issuer;
+         fc::raw::unpack(ds, _issuer);
+
+         name issuer = _issuer & 0xFFFFFFFFFFFFFFF0ULL;
+
+         if( (p.symbol && !boost::iequals(cursor.symbol_name(), *p.symbol)) || ((issuer != p.issuer) && (rootname(issuer) != p.issuer)) )
+            return true;
+
+         fc::variant withdraw;
+         asset total = asset(0, cursor.get_symbol());
+
+         int64_t  _deposit;
+         fc::raw::unpack(ds, _deposit);
+
+         auto get_opt = [=](size_t pos) -> bool {
+            return (_issuer >> pos) & 1;
+         };
+
+         fc::variant options = fc::mutable_variant_object()
+            ("frozen", get_opt(0))
+            ("whitelist", get_opt(1));
+
+         walk_key_value_table(p.code, p.account, "withdraws", [&](const key_value_object& obj2) {
+            EOS_ASSERT( obj2.value.size() >= sizeof(asset) + sizeof(name) + sizeof(fc::time_point_sec), chain::asset_type_exception, "Invalid data on table");
+
+            fc::datastream<const char *> ds2(obj2.value.data(), obj2.value.size());
+
+            asset quantity;
+            name  issuer;
+            fc::time_point_sec scheduled_time;
+
+            fc::raw::unpack(ds2, quantity);
+            fc::raw::unpack(ds2, issuer);
+            fc::raw::unpack(ds2, scheduled_time);
+
+            if ((quantity.get_symbol() == cursor.get_symbol()) && (issuer == p.issuer)) {
+               total += quantity;
+               withdraw = fc::mutable_variant_object()
+                  ("quantity", quantity)
+                  ("scheduled_time", scheduled_time);
+               return false;
+            }
+            return true;
+         });
+
+         auto deposit = asset(_deposit, cursor.get_symbol());
+
+         total += cursor + deposit;
+
+         if (!p.verbose || !(*p.verbose)) {
+            result["total"] = total;
+         } else {
+            result["total"] = total;
+            result["balance"] = cursor;
+            result["deposit"] = deposit;
+            result["withdraw"] = withdraw;
+            result["options"] = options;
+         }
+
+         if( results.find(issuer.to_string()) != results.end() )
+            results[issuer.to_string()] = fc::mutable_variant_object(results[issuer.to_string()])(cursor.symbol_name(), result);
+         else 
+            results[issuer.to_string()] = fc::mutable_variant_object()(cursor.symbol_name(), result);
       }
 
       // return false if we are looking for one and found it, true otherwise
@@ -1291,31 +1369,62 @@ fc::variant read_only::get_currency_stats( const read_only::get_currency_stats_p
    fc::mutable_variant_object results;
 
    const abi_def abi = eosio::chain_apis::get_abi( db, p.code );
-   (void)get_table_type( abi, "stat" );
+   (void)get_table_type( abi, "stat");
 
-   uint64_t scope = ( eosio::chain::string_to_symbol( 0, boost::algorithm::to_upper_copy(p.symbol).c_str() ) >> 8 );
+   //uint64_t scope = ( eosio::chain::string_to_symbol( 0, boost::algorithm::to_upper_copy(p.symbol).c_str() ) >> 8 );
 
-   walk_key_value_table(p.code, scope, N(stat), [&](const key_value_object& obj){
+   walk_key_value_table(p.code, p.issuer, N(stat), [&](const key_value_object& obj){
       EOS_ASSERT( obj.value.size() >= sizeof(read_only::get_currency_stats_result), chain::asset_type_exception, "Invalid data on table");
 
       fc::datastream<const char *> ds(obj.value.data(), obj.value.size());
       read_only::get_currency_stats_result result;
 
       fc::raw::unpack(ds, result.supply);
-      fc::raw::unpack(ds, result.max_supply);
-      fc::raw::unpack(ds, result.issuer);
+      if( p.symbol && !boost::iequals(result.supply.symbol_name(), *p.symbol) )
+         return true;
 
-      results[result.supply.symbol_name()] = result;
-      return true;
+      if (obj.value.size() == sizeof(read_only::get_currency_stats_result)) {
+         fc::raw::unpack(ds, result.max_supply);
+         fc::raw::unpack(ds, result.issuer);
+         results[result.supply.symbol_name()] = result;
+      } else {
+         chain::share_type _max_supply;
+         uint32_t _opts;
+         uint32_t withdraw_delay_sec;
+         int64_t _withdraw_min_amount;
+
+         fc::raw::unpack(ds, _max_supply);
+         fc::raw::unpack(ds, result.issuer);
+         fc::raw::unpack(ds, _opts);
+         fc::raw::unpack(ds, withdraw_delay_sec);
+         fc::raw::unpack(ds, _withdraw_min_amount);
+
+         result.max_supply = asset(_max_supply, result.supply.get_symbol());
+
+         auto get_opt = [=](size_t pos) -> bool {
+            return (_opts >> pos) & 1;
+         };
+
+         fc::variant options = fc::mutable_variant_object()
+            ("can_recall", get_opt(0))
+            ("can_freeze", get_opt(1))
+            ("can_whitelist", get_opt(2))
+            ("is_frozen", get_opt(3))
+            ("enforce_whitelist", get_opt(4))
+            ("withdraw_delay_sec", (get_opt(0)) ? withdraw_delay_sec : fc::variant())
+            ("withdraw_min_amount", (get_opt(0)) ? asset(_withdraw_min_amount, result.supply.get_symbol()).to_string() : fc::variant());
+
+         results[result.supply.symbol_name()] = fc::mutable_variant_object()
+            ("supply", result.supply)
+            ("max_supply", result.max_supply)
+            ("issuer", result.issuer)
+            ("options", options);
+      }
+
+      return !p.symbol || !boost::iequals(*p.symbol, result.supply.symbol_name());
    });
 
    return results;
-}
-
-// TODO: move this and similar functions to a header. Copied from wasm_interface.cpp.
-// TODO: fix strict aliasing violation
-static float64_t to_softfloat64( double d ) {
-   return *reinterpret_cast<float64_t*>(&d);
 }
 
 fc::variant get_global_row( const database& db, const abi_def& abi, const abi_serializer& abis, const fc::microseconds& abi_serializer_max_time_ms, bool shorten_abi_errors ) {
@@ -1334,7 +1443,7 @@ fc::variant get_global_row( const database& db, const abi_def& abi, const abi_se
    return abis.binary_to_variant(abis.get_table_type(N(global)), data, abi_serializer_max_time_ms, shorten_abi_errors );
 }
 
-read_only::get_producers_result read_only::get_producers( const read_only::get_producers_params& p ) const {
+read_only::get_producers_result read_only::get_producers( const read_only::get_producers_params& p ) const try {
    const abi_def abi = eosio::chain_apis::get_abi(db, config::system_account_name);
    const auto table_type = get_table_type(abi, N(producers));
    const abi_serializer abis{ abi, abi_serializer_max_time };
@@ -1382,6 +1491,20 @@ read_only::get_producers_result read_only::get_producers( const read_only::get_p
    }
 
    result.total_producer_vote_weight = get_global_row(d, abi, abis, abi_serializer_max_time, shorten_abi_errors)["total_producer_vote_weight"].as_double();
+   return result;
+} catch (...) {
+   read_only::get_producers_result result;
+
+   for (auto p : db.active_producers().producers) {
+      fc::variant row = fc::mutable_variant_object()
+         ("owner", p.producer_name)
+         ("producer_key", p.block_signing_key)
+         ("url", "")
+         ("total_votes", 0.0f);
+
+      result.rows.push_back(row);
+   }
+
    return result;
 }
 
@@ -1595,7 +1718,7 @@ static void push_recurse(read_write* rw, int index, const std::shared_ptr<read_w
          results->emplace_back( r );
       }
 
-      int next_index = index + 1;
+      size_t next_index = index + 1;
       if (next_index < params->size()) {
          push_recurse(rw, next_index, params, results, next );
       } else {
@@ -1642,7 +1765,7 @@ read_only::get_code_results read_only::get_code( const get_code_params& params )
 
    if( accnt.code.size() ) {
       result.wasm = string(accnt.code.begin(), accnt.code.end());
-      result.code_hash = fc::sha256::hash( accnt.code.data(), accnt.code.size() );
+      result.code_hash = accnt.code_version;
    }
 
    abi_def abi;
@@ -1660,7 +1783,7 @@ read_only::get_code_hash_results read_only::get_code_hash( const get_code_hash_p
    const auto& accnt  = d.get<account_object,by_name>( params.account_name );
 
    if( accnt.code.size() ) {
-      result.code_hash = fc::sha256::hash( accnt.code.data(), accnt.code.size() );
+      result.code_hash = accnt.code_version;
    }
 
    return result;
@@ -1685,7 +1808,7 @@ read_only::get_raw_abi_results read_only::get_raw_abi( const get_raw_abi_params&
    const auto& d = db.db();
    const auto& accnt = d.get<account_object,by_name>(params.account_name);
    result.abi_hash = fc::sha256::hash( accnt.abi.data(), accnt.abi.size() );
-   result.code_hash = fc::sha256::hash( accnt.code.data(), accnt.code.size() );
+   result.code_hash = accnt.code_version;
    if( !params.abi_hash || *params.abi_hash != result.abi_hash )
       result.abi = blob{{accnt.abi.begin(), accnt.abi.end()}};
 
@@ -1695,6 +1818,7 @@ read_only::get_raw_abi_results read_only::get_raw_abi( const get_raw_abi_params&
 read_only::get_account_results read_only::get_account( const get_account_params& params )const {
    get_account_results result;
    result.account_name = params.account_name;
+   result.nickname = get_nickname(params.account_name);
 
    const auto& d = db.db();
    const auto& rm = db.get_resource_limits_manager();
@@ -1740,7 +1864,7 @@ read_only::get_account_results read_only::get_account( const get_account_params&
    if( abi_serializer::to_abi(code_account.abi, abi) ) {
       abi_serializer abis( abi, abi_serializer_max_time );
 
-      const auto token_code = N(eosio.token);
+      const auto token_code = N(gxc.token);
 
       auto core_symbol = extract_core_symbol();
 
@@ -1884,7 +2008,7 @@ chain::symbol read_only::extract_core_symbol()const {
 
    // The following code makes assumptions about the contract deployed on eosio account (i.e. the system contract) and how it stores its data.
    const auto& d = db.db();
-   const auto* t_id = d.find<chain::table_id_object, chain::by_code_scope_table>(boost::make_tuple( N(eosio), N(eosio), N(rammarket) ));
+   const auto* t_id = d.find<chain::table_id_object, chain::by_code_scope_table>(boost::make_tuple( chain::config::system_account_name, chain::config::system_account_name, N(rammarket) ));
    if( t_id != nullptr ) {
       const auto &idx = d.get_index<key_value_index, by_scope_primary>();
       auto it = idx.find(boost::make_tuple( t_id->id, eosio::chain::string_to_symbol_c(4,"RAMCORE") ));
@@ -1906,6 +2030,30 @@ chain::symbol read_only::extract_core_symbol()const {
    }
 
    return core_symbol;
+}
+
+string read_only::get_nickname(name account_name)const {
+   string nickname;
+
+   const auto &d = db.db();
+   const auto* t_id = d.find<chain::table_id_object, chain::by_code_scope_table>(boost::make_tuple(N(gxc.user), N(gxc.user), N(nick)));
+   if (t_id != nullptr) {
+      const auto &idx = d.get_index<key_value_index, by_scope_primary>();
+      auto it = idx.find(boost::make_tuple(t_id->id, account_name.value));
+      if (it != idx.end()) {
+         fc::datastream<const char*> ds(it->value.data(), it->value.size());
+
+         try {
+            name id;
+            fc::raw::unpack(ds, id);
+            fc::raw::unpack(ds, nickname);
+         } catch (...) {
+            return nickname;
+         }
+      }
+   }
+
+   return nickname;
 }
 
 } // namespace chain_apis

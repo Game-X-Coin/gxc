@@ -101,6 +101,9 @@ public:
 
       uint64_t                block_cpu_limit = 0;
       uint64_t                block_net_limit = 0;
+
+      int64_t                 net_weight_modifier = 0;
+      int64_t                 cpu_weight_modifier = 0;
       //string                  recent_slots;
       //double                  participation_rate = 0;
       optional<string>        server_version_string;
@@ -138,6 +141,8 @@ public:
       fc::variant                self_delegated_bandwidth;
       fc::variant                refund_request;
       fc::variant                voter_info;
+
+      string                     nickname;
    };
 
    struct get_account_params {
@@ -308,16 +313,18 @@ public:
    struct get_currency_balance_params {
       name             code;
       name             account;
+      name             issuer;
       optional<string> symbol;
+      optional<bool>   verbose;
    };
 
-   vector<asset> get_currency_balance( const get_currency_balance_params& params )const;
+   fc::variant get_currency_balance( const get_currency_balance_params& params )const;
 
    struct get_currency_stats_params {
-      name           code;
-      string         symbol;
+      name             code;
+      name             issuer;
+      optional<string> symbol;
    };
-
 
    struct get_currency_stats_result {
       asset          supply;
@@ -556,6 +563,7 @@ public:
    }
 
    chain::symbol extract_core_symbol()const;
+   std::string   get_nickname(name account_name)const;
 
    friend struct resolver_factory<read_only>;
 };
@@ -639,8 +647,11 @@ public:
      static auto function() {
         return [](const input_type& v) {
             chain::key256_t k;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
             auto a = reinterpret_cast<const uint8_t*>(v._hash);
             set_from_word_sequence(a, a + sizeof(v._hash), k);
+#pragma GCC diagnostic pop
             return k;
         };
      }
@@ -736,7 +747,7 @@ private:
 FC_REFLECT( eosio::chain_apis::permission, (perm_name)(parent)(required_auth) )
 FC_REFLECT(eosio::chain_apis::empty, )
 FC_REFLECT(eosio::chain_apis::read_only::get_info_results,
-(server_version)(chain_id)(head_block_num)(last_irreversible_block_num)(last_irreversible_block_id)(head_block_id)(head_block_time)(head_block_producer)(virtual_block_cpu_limit)(virtual_block_net_limit)(block_cpu_limit)(block_net_limit)(server_version_string) )
+(server_version)(chain_id)(head_block_num)(last_irreversible_block_num)(last_irreversible_block_id)(head_block_id)(head_block_time)(head_block_producer)(virtual_block_cpu_limit)(virtual_block_net_limit)(block_cpu_limit)(block_net_limit)(net_weight_modifier)(cpu_weight_modifier)(server_version_string) )
 FC_REFLECT(eosio::chain_apis::read_only::get_block_params, (block_num_or_id))
 FC_REFLECT(eosio::chain_apis::read_only::get_block_header_state_params, (block_num_or_id))
 
@@ -749,9 +760,9 @@ FC_REFLECT( eosio::chain_apis::read_only::get_table_by_scope_params, (code)(tabl
 FC_REFLECT( eosio::chain_apis::read_only::get_table_by_scope_result_row, (code)(scope)(table)(payer)(count));
 FC_REFLECT( eosio::chain_apis::read_only::get_table_by_scope_result, (rows)(more) );
 
-FC_REFLECT( eosio::chain_apis::read_only::get_currency_balance_params, (code)(account)(symbol));
-FC_REFLECT( eosio::chain_apis::read_only::get_currency_stats_params, (code)(symbol));
-FC_REFLECT( eosio::chain_apis::read_only::get_currency_stats_result, (supply)(max_supply)(issuer));
+FC_REFLECT( eosio::chain_apis::read_only::get_currency_balance_params, (code)(account)(issuer)(symbol)(verbose) );
+FC_REFLECT( eosio::chain_apis::read_only::get_currency_stats_params, (code)(issuer)(symbol) );
+FC_REFLECT( eosio::chain_apis::read_only::get_currency_stats_result, (supply)(max_supply)(issuer) );
 
 FC_REFLECT( eosio::chain_apis::read_only::get_producers_params, (json)(lower_bound)(limit) )
 FC_REFLECT( eosio::chain_apis::read_only::get_producers_result, (rows)(total_producer_vote_weight)(more) );
@@ -765,7 +776,8 @@ FC_REFLECT( eosio::chain_apis::read_only::get_scheduled_transactions_result, (tr
 FC_REFLECT( eosio::chain_apis::read_only::get_account_results,
             (account_name)(head_block_num)(head_block_time)(privileged)(last_code_update)(created)
             (core_liquid_balance)(ram_quota)(net_weight)(cpu_weight)(net_limit)(cpu_limit)(ram_usage)(permissions)
-            (total_resources)(self_delegated_bandwidth)(refund_request)(voter_info) )
+            (total_resources)(self_delegated_bandwidth)(refund_request)(voter_info)(nickname) )
+// @swap code_hash
 FC_REFLECT( eosio::chain_apis::read_only::get_code_results, (account_name)(code_hash)(wast)(wasm)(abi) )
 FC_REFLECT( eosio::chain_apis::read_only::get_code_hash_results, (account_name)(code_hash) )
 FC_REFLECT( eosio::chain_apis::read_only::get_abi_results, (account_name)(abi) )

@@ -34,8 +34,12 @@
 
    function usage()
    {
-      printf "\\tUsage: %s \\n\\t[Build Option -o <Debug|Release|RelWithDebInfo|MinSizeRel>] \\n\\t[CodeCoverage -c] \\n\\t[Doxygen -d] \\n\\t[CoreSymbolName -s <1-7 characters>] \\n\\t[Avoid Compiling -a]\\n\\n" "$0" 1>&2
+      printf "\\tUsage: %s \\n\\t[Build Option -o <Debug|Release|RelWithDebInfo|MinSizeRel>] \\n\\t[CodeCoverage -c] \\n\\t[Doxygen -d] \\n\\t[CoreSymbolName -s <1-7 characters>] \\n\\t[Avoid Compiling -a]\\n\\t[Noninteractive -y]\\n\\n" "$0" 1>&2
       exit 1
+   }
+
+   is_noninteractive() {
+      [[ -n "${EOSIO_BUILD_NONINTERACTIVE+1}" ]]
    }
 
    ARCH=$( uname )
@@ -48,7 +52,7 @@
    DISK_MIN=20
    DOXYGEN=false
    ENABLE_COVERAGE_TESTING=false
-   CORE_SYMBOL_NAME="SYS"
+   CORE_SYMBOL_NAME="GXC"
    # Use current directory's tmp directory if noexec is enabled for /tmp
    if (mount | grep "/tmp " | grep --quiet noexec); then
         mkdir -p $SOURCE_DIR/tmp
@@ -66,7 +70,7 @@
    txtrst=$(tput sgr0)
 
    if [ $# -ne 0 ]; then
-      while getopts ":cdo:s:ah" opt; do
+      while getopts ":cdo:s:ahy" opt; do
          case "${opt}" in
             o )
                options=( "Debug" "Release" "RelWithDebInfo" "MinSizeRel" )
@@ -100,6 +104,9 @@
                usage
                exit 1
             ;;
+            y)
+               EOSIO_BUILD_NONINTERACTIVE=1
+            ;;
             \? )
                printf "\\n\\tInvalid Option: %s\\n" "-${OPTARG}" 1>&2
                usage
@@ -120,7 +127,7 @@
 
    if [ ! -d "${SOURCE_DIR}/.git" ]; then
       printf "\\n\\tThis build script only works with sources cloned from git\\n"
-      printf "\\tPlease clone a new eos directory with 'git clone https://github.com/EOSIO/eos --recursive'\\n"
+      printf "\\tPlease clone a new eos directory with 'git clone https://github.com/Game-X-Coin/gxc --recursive'\\n"
       printf "\\tSee the wiki for instructions: https://github.com/EOSIO/eos/wiki\\n"
       exit 1
    fi
@@ -285,23 +292,21 @@
 
    TIME_END=$(( $(date -u +%s) - ${TIME_BEGIN} ))
 
-   printf "\n\n${bldred}\t _______  _______  _______ _________ _______\n"
-   printf '\t(  ____ \(  ___  )(  ____ \\\\__   __/(  ___  )\n'
-   printf "\t| (    \/| (   ) || (    \/   ) (   | (   ) |\n"
-   printf "\t| (__    | |   | || (_____    | |   | |   | |\n"
-   printf "\t|  __)   | |   | |(_____  )   | |   | |   | |\n"
-   printf "\t| (      | |   | |      ) |   | |   | |   | |\n"
-   printf "\t| (____/\| (___) |/\____) |___) (___| (___) |\n"
-   printf "\t(_______/(_______)\_______)\_______/(_______)\n${txtrst}"
+   printf "\n\n${bldred}"
+   printf "\t  _____                     __   _______      _\n"
+   printf "\t / ____|                    \ \ / / ____|    (_)\n"
+   printf "\t| |  __  __ _ _ __ ___   ___ \ V / |     ___  _ _ __\n"
+   printf "\t| | |_ |/ _\` | '_ \` _ \ / _ \ > <| |    / _ \| | '_ \ \n"
+   printf "\t| |__| | (_| | | | | | |  __// . \ |___| (_) | | | | |\n"
+   printf "\t \_____|\__,_|_| |_| |_|\___/_/ \_\_____\___/|_|_| |_|\n"
+   printf "${txtrst}"
 
-   printf "\\n\\tEOSIO has been successfully built. %02d:%02d:%02d\\n\\n" $(($TIME_END/3600)) $(($TIME_END%3600/60)) $(($TIME_END%60))
-   printf "\\tTo verify your installation run the following commands:\\n"
+   printf "\\n\\tEOSIO (for GameXCoin) has been successfully built. %02d:%02d:%02d\\n\\n" $(($TIME_END/3600)) $(($TIME_END%3600/60)) $(($TIME_END%60))
+   printf "\\tTo verify your installation run the following commands (not supported yet):\\n"
 
    print_instructions
 
    printf "\\tFor more information:\\n"
-   printf "\\tEOSIO website: https://eos.io\\n"
-   printf "\\tEOSIO Telegram channel @ https://t.me/EOSProject\\n"
-   printf "\\tEOSIO resources: https://eos.io/resources/\\n"
-   printf "\\tEOSIO Stack Exchange: https://eosio.stackexchange.com\\n"
-   printf "\\tEOSIO wiki: https://github.com/EOSIO/eos/wiki\\n\\n\\n"
+   printf "\\tGameXCoin website: https://www.gamexcoin.io\\n"
+   printf "\\tGameXCoin Telegram channel (for Global users) @ https://t.me/GXC_EN\\n"
+   printf "\\tGameXCoin Telegram channel (for Korean users) @ https://t.me/GXC_KR\\n"

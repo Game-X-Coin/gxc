@@ -9,8 +9,12 @@
 #ifndef CONFIG_HPP_IN
 #define CONFIG_HPP_IN
 
+#include <boost/algorithm/string/case_conv.hpp>
+
 namespace eosio { namespace nodeos { namespace config {
   constexpr uint64_t version = 0x${nodeos_BUILD_VERSION};
+  const string node_executable_name = "${NODE_EXECUTABLE_NAME}";
+  const string blockchain_name = boost::algorithm::to_lower_copy(string("${BLOCKCHAIN_NAME}"));
 }}}
 
 #endif // CONFIG_HPP_IN
