@@ -1406,11 +1406,13 @@ fc::variant read_only::get_currency_stats( const read_only::get_currency_stats_p
          };
 
          fc::variant options = fc::mutable_variant_object()
-            ("can_recall", get_opt(0))
-            ("can_freeze", get_opt(1))
-            ("can_whitelist", get_opt(2))
-            ("is_frozen", get_opt(3))
-            ("enforce_whitelist", get_opt(4))
+            ("mintable", get_opt(0))
+            ("recallable", get_opt(1))
+            ("freezable", get_opt(2))
+            ("pausable", get_opt(3))
+            ("paused", get_opt(4))
+            ("whitelistable", get_opt(5))
+            ("whitelist_on", get_opt(6))
             ("withdraw_delay_sec", (get_opt(0)) ? withdraw_delay_sec : fc::variant())
             ("withdraw_min_amount", (get_opt(0)) ? asset(_withdraw_min_amount, result.supply.get_symbol()).to_string() : fc::variant());
 
