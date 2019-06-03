@@ -36,10 +36,31 @@ auto pack_unpack() {
    );
 }
 
+struct mongo_symbol : fc::reflect_init {
+public:
+   explicit mongo_symbol(uint64_t v = CORE_SYMBOL): m_value(v) {
+      auto a = to_symbol();
+   }
+
+   mongo_symbol(uint8_t p, const char* s): m_value(string_to_symbol(p, s)) {
+      auto a = to_symbol();
+   }
+
+   symbol to_symbol()const { return symbol(m_value); }
+
+   friend struct fc::reflector<mongo_symbol>;
+
+   void reflector_init()const {
+      auto a = to_symbol(); // for validation check by eosio::symbol constructor
+   }
+
+private:
+   uint64_t m_value;
+};
 
 struct mongo_asset : fc::reflect_init {
 public:
-   asset to_asset()const { return asset(amount, sym); }
+   asset to_asset()const { return asset(amount, sym.to_symbol()); }
 
    friend struct fc::reflector<mongo_asset>;
 
@@ -49,7 +70,7 @@ public:
 
 private:
    share_type amount;
-   symbol     sym;
+   mongo_symbol sym;
 };
 
 struct mongo_extended_asset : fc::reflect_init {
@@ -67,5 +88,21 @@ private:
 
 }} /// namespace eosio::chain
 
+namespace fc {
+   inline void to_variant(const eosio::chain::mongo_symbol& var, fc::variant& vo) {
+      auto s = var.to_symbol();
+      vo = fc::mutable_variant_object()("decimals", s.decimals())("code", s.to_symbol_code());
+   }
+   inline void from_variant(const fc::variant& var, eosio::chain::mongo_symbol& vo) {
+      vo = eosio::chain::mongo_symbol{
+         eosio::chain::symbol(
+            var["decimals"].as_uint64(),
+            var["code"].as_string().data()
+         ).value()
+      };
+   }
+}
+
+FC_REFLECT(eosio::chain::mongo_symbol, (m_value))
 FC_REFLECT(eosio::chain::mongo_asset, (amount)(sym))
 FC_REFLECT(eosio::chain::mongo_extended_asset, (quantity)(contract))
