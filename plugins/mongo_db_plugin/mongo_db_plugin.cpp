@@ -32,6 +32,8 @@
 #include <mongocxx/exception/operation_exception.hpp>
 #include <mongocxx/exception/logic_error.hpp>
 
+#include <eosio/mongo_db_plugin/mongo_asset.hpp>
+
 namespace fc { class variant; }
 
 namespace eosio {
@@ -663,6 +665,9 @@ optional<abi_serializer> mongo_db_plugin_impl::get_abi_serializer( account_name 
                      }
                   }
                }
+               abis.add_specialized_unpack_pack("asset", eosio::chain::pack_unpack<chain::mongo_asset>());
+               abis.add_specialized_unpack_pack("extended_asset", eosio::chain::pack_unpack<chain::mongo_extended_asset>());
+
                abis.set_abi( abi, abi_serializer_max_time );
                entry.serializer.emplace( std::move( abis ) );
                abi_cache_index.insert( entry );
