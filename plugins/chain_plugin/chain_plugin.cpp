@@ -1621,27 +1621,27 @@ fc::variant read_only::get_currency_balance( const read_only::get_currency_balan
             return name(n.value & mask);
          };
 
-         uint64_t _issuer;
-         fc::raw::unpack(ds, _issuer);
+         uint64_t issuer_;
+         name issuer;
 
-         name issuer = _issuer & 0xFFFFFFFFFFFFFFF0ULL;
+         fc::raw::unpack(ds, issuer_);
+         issuer = issuer_ & ~0xFULL;
 
          if( (p.symbol && !boost::iequals(cursor.symbol_name(), *p.symbol)) || ((issuer != p.issuer) && (rootname(issuer) != p.issuer)) )
             return true;
 
-         fc::variant withdraw;
+         // parse deposit (if exists)
+         bool has_deposit = false;
+         asset deposit;
+         
+         if (ds.remaining()) {
+            fc::raw::unpack(ds, deposit);
+            has_deposit = true;
+         }
+
+         // get withdrawal request (if exists)
          asset total = asset(0, cursor.get_symbol());
-
-         int64_t  _deposit;
-         fc::raw::unpack(ds, _deposit);
-
-         auto get_opt = [=](size_t pos) -> bool {
-            return (_issuer >> pos) & 1;
-         };
-
-         fc::variant options = fc::mutable_variant_object()
-            ("frozen", get_opt(0))
-            ("whitelist", get_opt(1));
+         fc::variant withdraw;
 
          walk_key_value_table(p.code, p.account, "withdraws", [&](const key_value_object& obj2) {
             EOS_ASSERT( obj2.value.size() >= sizeof(asset) + sizeof(name) + sizeof(fc::time_point_sec), chain::asset_type_exception, "Invalid data on table");
@@ -1666,17 +1666,26 @@ fc::variant read_only::get_currency_balance( const read_only::get_currency_balan
             return true;
          });
 
-         auto deposit = asset(_deposit, cursor.get_symbol());
-
          total += cursor + deposit;
 
+         // parse opts
+         auto get_opt = [=](size_t pos) -> bool {
+            return (issuer_ >> pos) & 1;
+         };
+
+         fc::variant options = fc::mutable_variant_object()
+            ("frozen", get_opt(0))
+            ("whitelist", get_opt(1));
+ 
          if (!p.verbose || !(*p.verbose)) {
             result["total"] = total;
          } else {
             result["total"] = total;
             result["balance"] = cursor;
-            result["deposit"] = deposit;
-            result["withdraw"] = withdraw;
+            if (has_deposit) {
+               result["deposit"] = deposit;
+               result["withdraw"] = withdraw;
+            }
             result["options"] = options;
          }
 
@@ -1711,38 +1720,39 @@ fc::variant read_only::get_currency_stats( const read_only::get_currency_stats_p
       if( p.symbol && !boost::iequals(result.supply.symbol_name(), *p.symbol) )
          return true;
 
+      fc::raw::unpack(ds, result.max_supply);
+      fc::raw::unpack(ds, result.issuer);
+
       if (obj.value.size() == sizeof(read_only::get_currency_stats_result)) {
-         fc::raw::unpack(ds, result.max_supply);
-         fc::raw::unpack(ds, result.issuer);
          results[result.supply.symbol_name()] = result;
       } else {
-         chain::share_type _max_supply;
-         uint32_t _opts;
+         uint32_t opts;
+         asset withdraw_min_amount;
          uint32_t withdraw_delay_sec;
-         int64_t _withdraw_min_amount;
 
-         fc::raw::unpack(ds, _max_supply);
-         fc::raw::unpack(ds, result.issuer);
-         fc::raw::unpack(ds, _opts);
-         fc::raw::unpack(ds, withdraw_delay_sec);
-         fc::raw::unpack(ds, _withdraw_min_amount);
-
-         result.max_supply = asset(_max_supply, result.supply.get_symbol());
+         fc::raw::unpack(ds, opts);
+         if (ds.remaining() >= sizeof(asset) + sizeof(uint32_t)) {
+            fc::raw::unpack(ds, withdraw_min_amount);
+            fc::raw::unpack(ds, withdraw_delay_sec);
+         }
 
          auto get_opt = [=](size_t pos) -> bool {
-            return (_opts >> pos) & 1;
+            return (opts >> pos) & 1;
          };
 
-         fc::variant options = fc::mutable_variant_object()
+         fc::mutable_variant_object options = fc::mutable_variant_object()
             ("mintable", get_opt(0))
             ("recallable", get_opt(1))
             ("freezable", get_opt(2))
             ("pausable", get_opt(3))
             ("paused", get_opt(4))
             ("whitelistable", get_opt(5))
-            ("whitelist_on", get_opt(6))
-            ("withdraw_delay_sec", (get_opt(0)) ? withdraw_delay_sec : fc::variant())
-            ("withdraw_min_amount", (get_opt(0)) ? asset(_withdraw_min_amount, result.supply.get_symbol()).to_string() : fc::variant());
+            ("whitelist_on", get_opt(6));
+
+         if (options["recallable"].as<bool>()) {
+            options["withdraw_min_amount"] = withdraw_min_amount;
+            options["withdraw_delay_sec"] = withdraw_delay_sec;
+         }
 
          results[result.supply.symbol_name()] = fc::mutable_variant_object()
             ("supply", result.supply)
