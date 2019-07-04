@@ -2474,7 +2474,7 @@ string read_only::get_nickname(name account_name)const {
    string nickname;
 
    const auto &d = db.db();
-   const auto* t_id = d.find<chain::table_id_object, chain::by_code_scope_table>(boost::make_tuple(N(gxc.user), N(gxc.user), N(nick)));
+   const auto* t_id = d.find<chain::table_id_object, chain::by_code_scope_table>(boost::make_tuple(N(gxc.account), N(gxc.account), N(accounts)));
    if (t_id != nullptr) {
       const auto &idx = d.get_index<key_value_index, by_scope_primary>();
       auto it = idx.find(boost::make_tuple(t_id->id, account_name.value));
