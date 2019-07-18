@@ -1633,7 +1633,7 @@ fc::variant read_only::get_currency_balance( const read_only::get_currency_balan
          // parse deposit (if exists)
          bool has_deposit = false;
          asset deposit;
-         
+
          if (ds.remaining()) {
             fc::raw::unpack(ds, deposit);
             has_deposit = true;
@@ -1676,7 +1676,7 @@ fc::variant read_only::get_currency_balance( const read_only::get_currency_balan
          fc::variant options = fc::mutable_variant_object()
             ("frozen", get_opt(0))
             ("whitelist", get_opt(1));
- 
+
          if (!p.verbose || !(*p.verbose)) {
             result["total"] = total;
          } else {
@@ -1691,7 +1691,7 @@ fc::variant read_only::get_currency_balance( const read_only::get_currency_balan
 
          if( results.find(issuer.to_string()) != results.end() )
             results[issuer.to_string()] = fc::mutable_variant_object(results[issuer.to_string()])(cursor.symbol_name(), result);
-         else 
+         else
             results[issuer.to_string()] = fc::mutable_variant_object()(cursor.symbol_name(), result);
       }
 
@@ -1747,7 +1747,8 @@ fc::variant read_only::get_currency_stats( const read_only::get_currency_stats_p
             ("pausable", get_opt(3))
             ("paused", get_opt(4))
             ("whitelistable", get_opt(5))
-            ("whitelist_on", get_opt(6));
+            ("whitelist_on", get_opt(6))
+            ("floatable", get_opt(7));
 
          if (options["recallable"].as<bool>()) {
             options["withdraw_min_amount"] = withdraw_min_amount;
