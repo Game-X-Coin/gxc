@@ -18,21 +18,21 @@ if [[ ! -z "$(pgrep mongod)" ]]; then
 fi
 echo "+++ $([[ "$BUILDKITE" == 'true' ]] && echo ':leaves: ')Starting new MongoDB"
 [[ ! -d ~/data/mongodb && ! -d mongodata ]] && mkdir mongodata
-echo "$ mongod --fork --logpath $(pwd)/mongod.log $([[ -d ~/data/mongodb ]] && echo '--dbpath ~/data/mongodb' || echo "--dbpath $(pwd)/mongodata") $([[ -f ~/etc/mongod.conf ]] && echo '-f ~/etc/mongod.conf')"
-eval mongod --fork --logpath $(pwd)/mongod.log $([[ -d ~/data/mongodb ]] && echo '--dbpath ~/data/mongodb' || echo "--dbpath $(pwd)/mongodata") $([[ -f ~/etc/mongod.conf ]] && echo '-f ~/etc/mongod.conf')
+echo "$ mongod --fork --logpath $(pwd)/mongod.log $([[ -d ~/data/mongodb ]] && echo '--dbpath ~/data/mongodb' || echo "--dbpath $(pwd)/mongodata") $(if [[ -f ~/etc/mongod.conf ]]; then echo '-f ~/etc/mongod.conf'; elif [[ -f /usr/local/etc/mongod.conf ]]; then echo '-f /usr/local/etc/mongod.conf'; fi)"
+eval mongod --fork --logpath $(pwd)/mongod.log $([[ -d ~/data/mongodb ]] && echo '--dbpath ~/data/mongodb' || echo "--dbpath $(pwd)/mongodata") $(if [[ -f ~/etc/mongod.conf ]]; then echo '-f ~/etc/mongod.conf'; elif [[ -f /usr/local/etc/mongod.conf ]]; then echo '-f /usr/local/etc/mongod.conf'; fi)
 # tests
 if [[ -z "$TEST" ]]; then # run all serial tests
     # count tests
-    echo "+++ $([[ "$BUILDKITE" == 'true' ]] && echo ':microscope: ')Running Long-Running Tests"
-    TEST_COUNT=$(ctest -N -L long_running_tests | grep -i 'Total Tests: ' | cut -d ':' -f 2 | awk '{print $1}')
+    echo "+++ $([[ "$BUILDKITE" == 'true' ]] && echo ':microscope: ')Running Non-Parallelizable Tests"
+    TEST_COUNT=$(ctest -N -L nonparallelizable_tests | grep -i 'Total Tests: ' | cut -d ':' -f 2 | awk '{print $1}')
     if [[ $TEST_COUNT > 0 ]]; then
         echo "$TEST_COUNT tests found."
         # run tests
         set +e # defer ctest error handling to end
-        echo '$ ctest -L long_running_tests --output-on-failure -T Test'
-        ctest -L long_running_tests --output-on-failure -T Test
+        echo '$ ctest -L nonparallelizable_tests --output-on-failure -T Test'
+        ctest -L nonparallelizable_tests --output-on-failure -T Test
         EXIT_STATUS=$?
-        echo 'Done running long-running tests.'
+        echo 'Done running non-parallelizable tests.'
     else
         echo "+++ $([[ "$BUILDKITE" == 'true' ]] && echo ':no_entry: ')ERROR: No tests registered with ctest! Exiting..."
         EXIT_STATUS='1'
