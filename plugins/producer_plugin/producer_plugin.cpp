@@ -378,7 +378,6 @@ class producer_plugin_impl : public std::enable_shared_from_this<producer_plugin
          });
 
          // push the new block
-         bool except = false;
          try {
             chain.push_block( bsf );
          } catch ( const guard_exception& e ) {
@@ -386,16 +385,12 @@ class producer_plugin_impl : public std::enable_shared_from_this<producer_plugin
             return;
          } catch( const fc::exception& e ) {
             elog((e.to_detail_string()));
-            except = true;
+            app().get_channel<channels::rejected_block>().publish( priority::medium, block );
+            throw;
          } catch ( const std::bad_alloc& ) {
             chain_plugin::handle_bad_alloc();
          } catch ( boost::interprocess::bad_alloc& ) {
             chain_plugin::handle_db_exhaustion();
-         }
-
-         if( except ) {
-            app().get_channel<channels::rejected_block>().publish( priority::medium, block );
-            return;
          }
 
          const auto& hbs = chain.head_block_state();
@@ -961,7 +956,12 @@ producer_plugin::runtime_options producer_plugin::get_runtime_options() const {
       my->_max_irreversible_block_age_us.count() < 0 ? -1 : my->_max_irreversible_block_age_us.count() / 1'000'000,
       my->_produce_time_offset_us,
       my->_last_block_time_offset_us,
-      my->_max_scheduled_transaction_time_per_block_ms
+      my->_max_scheduled_transaction_time_per_block_ms,
+      my->chain_plug->chain().get_subjective_cpu_leeway() ?
+            my->chain_plug->chain().get_subjective_cpu_leeway()->count() :
+            fc::optional<int32_t>(),
+      my->_incoming_defer_ratio,
+      my->chain_plug->chain().get_greylist_limit()
    };
 }
 
