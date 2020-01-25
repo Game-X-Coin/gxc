@@ -378,7 +378,6 @@ class producer_plugin_impl : public std::enable_shared_from_this<producer_plugin
          });
 
          // push the new block
-         bool except = false;
          try {
             chain.push_block( bsf );
          } catch ( const guard_exception& e ) {
@@ -386,28 +385,30 @@ class producer_plugin_impl : public std::enable_shared_from_this<producer_plugin
             return;
          } catch( const fc::exception& e ) {
             elog((e.to_detail_string()));
-            except = true;
+            app().get_channel<channels::rejected_block>().publish( priority::medium, block );
+            throw;
          } catch ( const std::bad_alloc& ) {
             chain_plugin::handle_bad_alloc();
          } catch ( boost::interprocess::bad_alloc& ) {
             chain_plugin::handle_db_exhaustion();
          }
 
-         if( except ) {
-            app().get_channel<channels::rejected_block>().publish( priority::medium, block );
-            return;
-         }
-
-         if( chain.head_block_state()->header.timestamp.next().to_time_point() >= fc::time_point::now() ) {
+         const auto& hbs = chain.head_block_state();
+         if( hbs->header.timestamp.next().to_time_point() >= fc::time_point::now() ) {
             _production_enabled = true;
          }
 
-
          if( fc::time_point::now() - block->timestamp < fc::minutes(5) || (block->block_num() % 1000 == 0) ) {
             ilog("Received block ${id}... #${n} @ ${t} signed by ${p} [trxs: ${count}, lib: ${lib}, conf: ${confs}, latency: ${latency} ms]",
-                 ("p",block->producer)("id",fc::variant(block->id()).as_string().substr(8,16))
-                 ("n",block_header::num_from_id(block->id()))("t",block->timestamp)
-                 ("count",block->transactions.size())("lib",chain.last_irreversible_block_num())("confs", block->confirmed)("latency", (fc::time_point::now() - block->timestamp).count()/1000 ) );
+                 ("p",block->producer)("id",id.str().substr(8,16))("n",block->block_num())("t",block->timestamp)
+                 ("count",block->transactions.size())("lib",chain.last_irreversible_block_num())
+                 ("confs", block->confirmed)("latency", (fc::time_point::now() - block->timestamp).count()/1000 ) );
+            if( chain.get_read_mode() != db_read_mode::IRREVERSIBLE && hbs->id != id && hbs->block != nullptr ) { // not applied to head
+               ilog("Block not applied to head ${id}... #${n} @ ${t} signed by ${p} [trxs: ${count}, dpos: ${dpos}, conf: ${confs}, latency: ${latency} ms]",
+                    ("p",hbs->block->producer)("id",hbs->id.str().substr(8,16))("n",hbs->block_num)("t",hbs->block->timestamp)
+                    ("count",hbs->block->transactions.size())("dpos", hbs->dpos_irreversible_blocknum)
+                    ("confs", hbs->block->confirmed)("latency", (fc::time_point::now() - hbs->block->timestamp).count()/1000 ) );
+            }
          }
       }
 
@@ -955,7 +956,12 @@ producer_plugin::runtime_options producer_plugin::get_runtime_options() const {
       my->_max_irreversible_block_age_us.count() < 0 ? -1 : my->_max_irreversible_block_age_us.count() / 1'000'000,
       my->_produce_time_offset_us,
       my->_last_block_time_offset_us,
-      my->_max_scheduled_transaction_time_per_block_ms
+      my->_max_scheduled_transaction_time_per_block_ms,
+      my->chain_plug->chain().get_subjective_cpu_leeway() ?
+            my->chain_plug->chain().get_subjective_cpu_leeway()->count() :
+            fc::optional<int32_t>(),
+      my->_incoming_defer_ratio,
+      my->chain_plug->chain().get_greylist_limit()
    };
 }
 
